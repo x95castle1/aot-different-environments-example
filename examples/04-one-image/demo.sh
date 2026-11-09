@@ -75,6 +75,6 @@ done
 step "4. Across environments"
 expect across.images "" "$(printf '%s\n' "${ids[@]}" | sort -u | wc -l | tr -d ' ')"
 expect across.builds "" "$(printf '%s\n' "${builds[@]}" | sort -u | wc -l | tr -d ' ')"
-printf '\n  %s%-6s %-14s %-48s %-26s %s%s\n' "$C_BOLD" "env" "digest" "app.db-url" "heap flags" "AOT cache" "$C_RESET"
+printf '\n  %s%-6s %-14s %-48s %-26s %s%s\n' "$C_BOLD" "env" "digest" "app.db-url" "heap flags" "JDK AOT cache" "$C_RESET"
 printf '  %s\n' "${rows[@]}"
 finish

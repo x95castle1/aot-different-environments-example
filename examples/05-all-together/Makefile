@@ -8,11 +8,11 @@ ENVS := dev1 dev2 qa1 prod1
 ENV ?= dev1
 
 .PHONY: demo
-demo: ## Full demo + report: start everything, verify every env, check AOT-cache use, compare startup times
+demo: ## Full demo + report: start everything, verify every env, check JDK AOT-cache use, compare startup times
 	./scripts/demo.sh
 
 .PHONY: image
-image: ## Build the ONE app image (Spring AOT + AOT-cache training, offline)
+image: ## Build the ONE app image (Spring AOT + JDK AOT-cache training, offline)
 	docker compose build
 
 .PHONY: infra
@@ -36,11 +36,11 @@ verify: ## Check each env: profiles, config, secrets, Mongo, data isolation, sam
 	./scripts/verify.sh
 
 .PHONY: aot-check
-aot-check: ## Which envs' JVMs used the AOT cache (prod/dev1/qa1: yes, dev2/ZGC: falls back)
+aot-check: ## Which envs' JVMs used the JDK AOT cache (prod/dev1/qa1: yes, dev2/ZGC: falls back)
 	./scripts/aot-check.sh
 
 .PHONY: startup-compare
-startup-compare: ## Startup time: AOT cache + Spring AOT vs Spring AOT only vs neither
+startup-compare: ## Startup time: JDK AOT cache + Spring AOT vs Spring AOT only vs neither
 	./scripts/startup-compare.sh
 
 .PHONY: fail-fast-demo

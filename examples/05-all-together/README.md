@@ -16,7 +16,7 @@ make demo              # start + verify + aot-check
 make start             # build the image, start infra, bootstrap credentials, start the four environments
 make verify            # per env: profiles, config source, secrets, Mongo, data isolation; same image everywhere
 make aot-check         # which envs' JVMs used the AOT cache (dev2 runs ZGC on purpose: falls back)
-make startup-compare   # Spring AOT + AOT cache vs Spring AOT only vs neither
+make startup-compare   # Spring AOT + JDK AOT cache vs Spring AOT only vs neither
 make fail-fast-demo    # startup refuses to run when Config Server/Vault are unreachable or the token is wrong
 make report ENV=prod1  # an env's startup report
 make logs              # fzf picker over every running container (or ENV=dev1)
@@ -61,7 +61,7 @@ Where the values come from:
 
 `make demo` writes `reports/05-all-together/<run>/report.md` (for people) and `results.json` (for scripts and agents), plus the
 evidence in `raw/`. The terminal ends with the verdict, the answer, and what improved, what didn't and what was
-unexpected. PASS means every environment verified (`works`), the AOT cache was used everywhere except dev2/ZGC (`no-benefit-expected`), and Spring AOT + the cache started prod1 faster than neither (`improved`). The report also splits the gain between Spring AOT and the AOT cache. What each outcome means and how timings are judged: [docs/reading-reports.md](../../docs/reading-reports.md).
+unexpected. PASS means every environment verified (`works`), the JDK AOT cache was used everywhere except dev2/ZGC (`no-benefit-expected`), and Spring AOT + the cache started prod1 faster than neither (`improved`). The report also splits the gain between Spring AOT and the AOT cache. What each outcome means and how timings are judged: [docs/reading-reports.md](../../docs/reading-reports.md).
 The labels, expected values and explanations come from [`expectations.json`](expectations.json).
 
 ## Code

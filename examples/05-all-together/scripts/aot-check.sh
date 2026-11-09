@@ -15,7 +15,7 @@ for env in ${*:-prod1 dev1 qa1 dev2}; do
   [[ -n "$flags" ]] || flags="$(image_jvm_flags demo-app:1.0.0)  (image default = training flags)"
   aot_usage "${env}.aot-cache.txt" docker compose run --rm --no-deps -T --entrypoint sh "app-${env}" -c
   note "  JVM flags: ${flags}"
-  note "  classes from AOT cache: ${CACHED} / ${TOTAL}"
+  note "  classes from JDK AOT cache: ${CACHED} / ${TOTAL}"
   if [[ "$env" == dev2 ]]; then expect cache.zgc "$env" "$AOT_VERDICT" "" "${env}.aot-cache.txt"
   else expect cache "$env" "$AOT_VERDICT" "" "${env}.aot-cache.txt"; fi
 done

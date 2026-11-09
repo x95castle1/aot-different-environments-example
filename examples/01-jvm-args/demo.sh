@@ -37,7 +37,7 @@ start_once() {
 }
 
 step "Image ${IMAGE}"
-note "  AOT cache trained with (image default JDK_JAVA_OPTIONS): ${PROD}"
+note "  JDK AOT cache trained with (image default JDK_JAVA_OPTIONS): ${PROD}"
 note "  ${RUNS} timed runs per scenario; Spring's \"Started ... in X seconds\""
 start_once "" "" >/dev/null   # warm-up
 
@@ -50,7 +50,7 @@ while IFS=$'\x1f' read -r id label flags dopts; do
   set_opts "$flags" "$dopts"
   aot_usage "${id}.aot-cache.txt" docker run --rm ${OPTS[@]+"${OPTS[@]}"} --entrypoint sh "$IMAGE" -c
   expect "cache.${id}" "" "$AOT_VERDICT" "" "${id}.aot-cache.txt"
-  note "  classes from AOT cache: ${CACHED} / ${TOTAL}"
+  note "  classes from JDK AOT cache: ${CACHED} / ${TOTAL}"
 
   times=()
   for i in $(seq 1 "$RUNS"); do

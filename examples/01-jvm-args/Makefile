@@ -9,7 +9,7 @@ demo: image ## Build, then run every JVM-flag scenario and print the cache/start
 	RUNS=$(RUNS) ./demo.sh
 
 .PHONY: image
-image: ## Build the image (Spring AOT + AOT cache trained with the prod flags, offline)
+image: ## Build the image (Spring AOT + JDK AOT cache trained with the prod flags, offline)
 	docker build -f $(ROOT)/docker/app.Dockerfile \
 	  --build-arg MODULE=examples/01-jvm-args/app --build-arg APP=jvm-args-app \
 	  --build-arg REVISION=$(REVISION) -t $(IMAGE) $(ROOT)

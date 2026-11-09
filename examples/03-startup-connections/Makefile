@@ -9,7 +9,7 @@ demo: ## Offline build, start dev1, rotate its secret, then break each dependenc
 	./demo.sh
 
 .PHONY: image
-image: ## Build the image (no network for Spring AOT or AOT-cache training)
+image: ## Build the image (no network for Spring AOT or JDK AOT-cache training)
 	docker build -f $(ROOT)/docker/app.Dockerfile \
 	  --build-arg MODULE=examples/03-startup-connections/app --build-arg APP=connections-app \
 	  --build-arg REVISION=$(REVISION) -t $(IMAGE) $(ROOT)

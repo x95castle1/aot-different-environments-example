@@ -89,8 +89,8 @@
       ]
     },
     "cache.prod": {
-      "group": "AOT cache used?",
-      "label": "prod flags: AOT cache",
+      "group": "JDK AOT cache used?",
+      "label": "prod flags: JDK AOT cache",
       "short": "prod flags",
       "expected": "USED",
       "outcome": "works",
@@ -102,8 +102,8 @@
       ]
     },
     "cache.small-heap": {
-      "group": "AOT cache used?",
-      "label": "smaller heap: AOT cache",
+      "group": "JDK AOT cache used?",
+      "label": "smaller heap: JDK AOT cache",
       "short": "smaller heap",
       "expected": "USED",
       "outcome": "works",
@@ -114,8 +114,8 @@
       ]
     },
     "cache.big-heap": {
-      "group": "AOT cache used?",
-      "label": "bigger fixed heap: AOT cache",
+      "group": "JDK AOT cache used?",
+      "label": "bigger fixed heap: JDK AOT cache",
       "short": "bigger fixed heap",
       "expected": "USED",
       "outcome": "works",
@@ -125,8 +125,8 @@
       ]
     },
     "cache.mem512": {
-      "group": "AOT cache used?",
-      "label": "512 MB container: AOT cache",
+      "group": "JDK AOT cache used?",
+      "label": "512 MB container: JDK AOT cache",
       "short": "512 MB container",
       "expected": "USED",
       "outcome": "works",
@@ -136,8 +136,8 @@
       ]
     },
     "cache.cpu1": {
-      "group": "AOT cache used?",
-      "label": "1 CPU: AOT cache",
+      "group": "JDK AOT cache used?",
+      "label": "1 CPU: JDK AOT cache",
       "short": "1 CPU",
       "expected": "USED",
       "outcome": "works",
@@ -147,8 +147,8 @@
       ]
     },
     "cache.cpu1-off": {
-      "group": "AOT cache used?",
-      "label": "1 CPU, cache off: AOT cache",
+      "group": "JDK AOT cache used?",
+      "label": "1 CPU, cache off: JDK AOT cache",
       "short": "1 CPU, cache off",
       "expected": "not used",
       "outcome": "info",
@@ -158,8 +158,8 @@
       ]
     },
     "cache.extra-props": {
-      "group": "AOT cache used?",
-      "label": "extra -D props + GC logging: AOT cache",
+      "group": "JDK AOT cache used?",
+      "label": "extra -D props + GC logging: JDK AOT cache",
       "short": "extra -D props + GC logging",
       "expected": "USED",
       "outcome": "works",
@@ -169,8 +169,8 @@
       ]
     },
     "cache.parallel": {
-      "group": "AOT cache used?",
-      "label": "Parallel GC: AOT cache",
+      "group": "JDK AOT cache used?",
+      "label": "Parallel GC: JDK AOT cache",
       "short": "Parallel GC",
       "expected": "USED",
       "outcome": "works",
@@ -181,8 +181,8 @@
       ]
     },
     "cache.zgc": {
-      "group": "AOT cache used?",
-      "label": "ZGC: AOT cache",
+      "group": "JDK AOT cache used?",
+      "label": "ZGC: JDK AOT cache",
       "short": "ZGC",
       "expected": "not used",
       "outcome": "no-benefit-expected",
@@ -192,8 +192,8 @@
       ]
     },
     "cache.cache-off": {
-      "group": "AOT cache used?",
-      "label": "cache off: AOT cache",
+      "group": "JDK AOT cache used?",
+      "label": "cache off: JDK AOT cache",
       "short": "cache off",
       "expected": "not used",
       "outcome": "info",

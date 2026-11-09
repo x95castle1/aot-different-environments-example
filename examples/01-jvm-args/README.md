@@ -25,7 +25,7 @@ The run ends with this table in the terminal, then the verdict. The same table i
 
 ```
 == Startup times (median of each scenario's runs; each row is compared with the scenario named under "compared with")
-  scenario                           AOT cache        runs (s)                       median  compared with                    change                 outcome
+  scenario                           JDK AOT cache    runs (s)                       median  compared with                    change                 outcome
   prod flags (trained with these)    USED 7547/7702   0.354 0.254 0.248 0.268 0.335  0.268s  cache off (reference)            2.5× faster vs 0.673s  improved
   smaller heap (-Xmx256m)            USED 7547/7702   0.263 0.334 0.242 0.243 0.241  0.243s  prod flags (trained with these)  -9% vs 0.268s          unchanged
   bigger fixed heap (-Xms2g -Xmx2g)  USED 7547/7702   0.241 0.232 0.232 0.231 0.293  0.232s  prod flags (trained with these)  -13% vs 0.268s         unchanged
@@ -38,7 +38,7 @@ The run ends with this table in the terminal, then the verdict. The same table i
   cache off (reference)              not used 0/7466  0.629 0.691 0.673 1.892 0.643  0.673s  -                                -                      reference
 ```
 
-- **AOT cache** column: whether the JVM used the cache, and how many of the loaded classes came from it.
+- **JDK AOT cache** column: whether the JVM used the cache, and how many of the loaded classes came from it.
 - **compared with / change**: each row is judged against its reference:
   - prod against prod-with-cache-off (what the cache is worth);
   - other flags against prod (did the flag change anything?);

@@ -2,13 +2,14 @@
 include ../../make/common.mk
 
 IMAGE := profiles-app:1.0.0
+RUNS ?= 5
 
 .PHONY: demo
-demo: image ## Build, then run dev1/dev2/qa1/prod1 (+ debug, + AOT off) from one image and compare
-	./demo.sh
+demo: image ## Build, run dev1/dev2/qa1/prod1 (+ debug, + without Spring AOT) from one image, compare, then time each RUNS times
+	RUNS=$(RUNS) ./demo.sh
 
 .PHONY: image
-image: ## Build the image (Spring AOT + AOT cache trained with the prod flags, offline)
+image: ## Build the image (Spring AOT + JDK AOT cache trained with the prod flags, offline)
 	docker build -f $(ROOT)/docker/app.Dockerfile \
 	  --build-arg MODULE=examples/02-dynamic-profiles/app --build-arg APP=profiles-app \
 	  --build-arg REVISION=$(REVISION) -t $(IMAGE) $(ROOT)

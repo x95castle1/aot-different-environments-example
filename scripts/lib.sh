@@ -199,7 +199,7 @@ print_timing_table() {
     def secs: if . == null then "-" else "\(.)s" end;
     [.results[] | select(.kind == "timing")] as $t
     | ($t | any(.aotCache != null)) as $cache
-    | (["scenario"] + (if $cache then ["AOT cache"] else [] end) + ["runs (s)", "median", "compared with", "change", "outcome"] | join("\t")),
+    | (["scenario"] + (if $cache then ["JDK AOT cache"] else [] end) + ["runs (s)", "median", "compared with", "change", "outcome"] | join("\t")),
       ($t[] | [.short]
         + (if $cache then [if .aotCache then "\(.aotCache.verdict) \(.aotCache.classes // "")" else "-" end] else [] end)
         + [(.runs | map(if . == null then "fail" else tostring end) | join(" ")),
@@ -216,8 +216,8 @@ print_timing_table() {
         -e "s/ reference\$/ ${C_DIM}reference${C_RESET}/" \
         -e 's/^/  /'
   jq -r 'if .attribution then
-      "\n  Where the gain comes from: neither \(.attribution.neither)s → Spring AOT only \(.attribution.springAotOnly)s → Spring AOT + AOT cache \(.attribution.full)s",
-      "  Spring AOT saved \(.attribution.springAotSaved)s (\(.attribution.springAotShare // "?")% of the gain), the AOT cache \(.attribution.aotCacheSaved)s (\(.attribution.aotCacheShare // "?")%)"
+      "\n  Where the gain comes from: neither \(.attribution.neither)s → Spring AOT only \(.attribution.springAotOnly)s → Spring AOT + JDK AOT cache \(.attribution.full)s",
+      "  Spring AOT saved \(.attribution.springAotSaved)s (\(.attribution.springAotShare // "?")% of the gain), the JDK AOT cache \(.attribution.aotCacheSaved)s (\(.attribution.aotCacheShare // "?")%)"
     else empty end' "$1"
 }
 
@@ -266,7 +266,7 @@ aot_usage() {
   out=$("$@" "$AOT_USAGE_SCRIPT")
   read -r CACHED TOTAL <<<"$(head -1 <<<"$out")"
   AOT_VERDICT=$(aot_verdict "${CACHED:-0}" "${TOTAL:-0}")
-  { echo "classes loaded from the AOT cache: ${CACHED} / ${TOTAL}"
+  { echo "classes loaded from the JDK AOT cache: ${CACHED} / ${TOTAL}"
     tail -n +2 <<<"$out" | sed -E 's/^\[[0-9.]+s\]//'; } | save_evidence "$name"
 }
 

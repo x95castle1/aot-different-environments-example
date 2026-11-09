@@ -8,7 +8,7 @@ Stack: Spring Boot 4.0.9, Spring Cloud 2025.1.4, Java 25, Maven, Docker Compose.
 | # | Question | Example | Run | What you'll see |
 |---|---|---|---|---|
 | 1 | JVM arguments vary per environment (prod as the workaround) | [01-jvm-args](examples/01-jvm-args) | `make examples EX=01` | One image, 10 flag scenarios: compatible flags keep ~0.3 s startup from the cache; ZGC falls back (~0.8 s); `AOTMode=on` makes that an error |
-| 2 | Active profiles vary per environment/index, not fixed at build time | [02-dynamic-profiles](examples/02-dynamic-profiles) | `make examples EX=02` | `APP_ENV`+`APP_ENV_INDEX` → profiles at startup; values follow each env, while `@Profile` beans are frozen by AOT (shown with AOT off for contrast) |
+| 2 | Active profiles vary per environment/index, not fixed at build time | [02-dynamic-profiles](examples/02-dynamic-profiles) | `make examples EX=02` | `APP_ENV`+`APP_ENV_INDEX` → profiles at startup; values follow each env, while `@Profile` beans are frozen by AOT (shown without Spring AOT for contrast); every env starts as fast as prod1 from the same cache, and Spring AOT makes it ~1.6× faster |
 | 3 | Connect to Config Server, Vault, Mongo at startup; nothing reachable at build time | [03-startup-connections](examples/03-startup-connections) | `make examples EX=03` | Build under `--network=none`; startup pulls config + secrets and connects; secret rotation without rebuild; fail-fast when anything is missing |
 | 4 | Same build deployed to all environments | [04-one-image](examples/04-one-image) | `make examples EX=04` | Build once, push, deploy the digest to dev1 → qa1 → prod1; image scan finds no env config; all use the AOT cache |
 | ★ | All of the above at once | [05-all-together](examples/05-all-together) | `make examples EX=05` | Four environments, one image, real Config Server/Vault/Mongo, per-env JVM flags |
@@ -61,7 +61,7 @@ Rules that keep one image working everywhere:
 
 ```
 common/                 shared: EnvironmentProfilesPostProcessor (APP_ENV -> profiles), JvmInfo, Fingerprints
-docker/app.Dockerfile   one Dockerfile for every example: offline Maven + Spring AOT, offline AOT-cache training
+docker/app.Dockerfile   one Dockerfile for every example: offline Maven + Spring AOT, offline JDK AOT-cache training
 infra/                  Config Server, Vault, MongoDB (shared by 03 and 05), config-repo, bootstrap.sh
 examples/NN-*/          app/ (Maven module), Makefile (help/demo/stop/clean/…), demo.sh, README.md
 scripts/lib.sh          demo helpers: expect/record_timing (reporting), startup timing, AOT-cache usage counting

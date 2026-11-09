@@ -72,12 +72,12 @@
       "ifUnexpected": ["Rerun the bootstrap."]
     },
     "cache": {
-      "group": "AOT cache per environment", "label": "AOT cache used with this env's JVM flags", "short": "AOT cache used", "expected": "USED",
+      "group": "JDK AOT cache per environment", "label": "JDK AOT cache used with this env's JVM flags", "short": "JDK AOT cache used", "expected": "USED",
       "why": "This environment's flags are compatible with the cache trained with the prod flags (example 01).",
       "ifUnexpected": ["Read the JVM's message in the evidence (from -Xlog:aot).", "Check this service's JDK_JAVA_OPTIONS in compose.yml."]
     },
     "cache.zgc": {
-      "group": "AOT cache per environment", "label": "AOT cache with ZGC", "short": "AOT cache unusable with ZGC", "expected": "not used", "outcome": "no-benefit-expected",
+      "group": "JDK AOT cache per environment", "label": "JDK AOT cache with ZGC", "short": "JDK AOT cache unusable with ZGC", "expected": "not used", "outcome": "no-benefit-expected",
       "why": "dev2 runs ZGC on purpose. The JDK 25 AOT cache can't be used with ZGC (ZGC runs without compressed oops, which the cache was built with), so the JVM starts normally without it.",
       "ifUnexpected": ["If the cache was used, the JDK is probably 26+ (ZGC support, JEP 516). Check the JDK in the Run table."]
     },
@@ -96,7 +96,7 @@
   },
   "timings": {
     "scenarios": {
-      "full":     { "label": "Spring AOT + AOT cache (default)", "compareTo": "neither", "expect": "improved",
+      "full":     { "label": "Spring AOT + JDK AOT cache (default)", "compareTo": "neither", "expect": "improved",
                     "why": "Spring AOT skips bean-definition work at startup, and the AOT cache skips class loading/linking. Together they beat the same image with neither, even with real network round trips to Config Server and Vault." },
       "aot-only": { "label": "Spring AOT only", "compareTo": "neither", "expect": "info",
                     "why": "For attribution: how much of the gain is Spring AOT alone." },

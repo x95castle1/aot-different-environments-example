@@ -1,6 +1,6 @@
 # 04 · One build, promoted unchanged through every environment
 
-**Question:** *The same build gets deployed to all environments.* Can a Spring AOT + AOT-cache image really be
+**Question:** *The same build gets deployed to all environments.* Can a Spring AOT + JDK AOT-cache image really be
 built once and promoted dev → qa → prod?
 
 **Answer:** Yes. The image is built once and pushed, and from then on **only its digest** is deployed. Each
@@ -27,12 +27,12 @@ make stop     # stop the registry and environments
 == 2. Scan the image for environment-specific settings
   ✓ image contains 'dev1': 0   ✓ 'prod-db.internal': 0   ✓ 'oncall@example.com': 0   ...
 == 3. Promote: dev1 -> qa1 -> prod1
-  ✓ dev1 runs the promoted digest   ✓ dev1 profiles: dev,dev1   ✓ dev1 AOT cache: USED   ...
+  ✓ dev1 runs the promoted digest   ✓ dev1 profiles: dev,dev1   ✓ dev1 JDK AOT cache: USED   ...
 == 4. Across environments
   ✓ distinct images running: 1
   ✓ distinct build times reported by the apps: 1
 
-  env    digest         app.db-url                                       heap flags                 AOT cache
+  env    digest         app.db-url                                       heap flags                 JDK AOT cache
   dev1   63fd0eebcfd1   mongodb://dev-db.internal:27017/orders_dev1      -Xmx256m                   7520/7680
   qa1    63fd0eebcfd1   mongodb://qa-db.internal:27017/orders_qa1        -Xmx384m                   7520/7680
   prod1  63fd0eebcfd1   mongodb://prod-db.internal:27017/orders_prod1    -XX:MaxRAMPercentage=75    7520/7680

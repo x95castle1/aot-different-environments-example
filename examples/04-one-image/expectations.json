@@ -46,7 +46,7 @@
       "ifUnexpected": ["Check the volume mount in compose.yml and envs/<env>/config/application.yml."]
     },
     "cache": {
-      "group": "Promotion", "label": "AOT cache used with this env's JVM flags", "short": "AOT cache used", "expected": "USED",
+      "group": "Promotion", "label": "JDK AOT cache used with this env's JVM flags", "short": "JDK AOT cache used", "expected": "USED",
       "why": "The environments' flags (different heap sizes; prod uses the training flags) are all compatible with the cache baked into the image.",
       "ifUnexpected": ["Read the JVM's message in the evidence (from -Xlog:aot).", "Did someone add an incompatible flag (e.g. ZGC on JDK 25) to envs/<env>/app.env?"]
     },

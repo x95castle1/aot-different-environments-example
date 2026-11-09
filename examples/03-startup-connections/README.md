@@ -4,7 +4,7 @@
 environment, and none of them is reachable at build time.*
 
 **Answer:** Both build-time steps run with **no network at all** (`RUN --network=none`): Spring AOT processing
-(inside `mvn package`) and the AOT-cache training run. Config Server and Vault are config imports, which Spring
+(inside `mvn package`) and the JDK AOT-cache training run. Config Server and Vault are config imports, which Spring
 resolves at every startup, AOT or not. Mongo connects lazily. So the image is built blind and connects for real when
 each environment starts it. Rotating a secret needs a restart, not a rebuild. A missing or broken dependency stops
 startup (fail fast).
@@ -26,7 +26,7 @@ make stop     # stop dev1 (infra keeps running; make -C ../../infra stop)
     [build 5/6] RUN --network=none ... ./mvnw -B -o ... package          <- Spring AOT, offline
     Fetching config from server at : http://config-server.invalid:8888   <- skipped at build time
     Vault location [secret/connections-app] not resolvable: ...
-    [stage-1 5/5] RUN --network=none java -XX:AOTCacheOutput=...         <- AOT cache training, offline
+    [stage-1 5/5] RUN --network=none java -XX:AOTCacheOutput=...         <- JDK AOT cache training, offline
 == 3. Start dev1
     Located environment: name=connections-app, profiles=[dev,dev1]
     Started ConnectionsApplication in 0.52 seconds

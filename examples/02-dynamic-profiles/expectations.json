@@ -1,25 +1,27 @@
 {
   "example": "02-dynamic-profiles",
   "title": "02 · Active profiles decided per environment at startup",
-  "kind": "functional",
+  "kind": "mixed",
   "question": "The app has dynamic active profiles that vary by environment/index and can't be fixed at build time. Spring AOT runs at build time; does that freeze the profiles?",
   "answer": {
-    "pass": "Profiles and everything that is a value are decided at startup, even with Spring AOT: one image became dev1, dev2, qa1 and prod1 with the right profiles, profile-file values and @Bean-method choice. What Spring AOT freezes is which beans exist: the @Profile(\"prod\") and @ConditionalOnProperty beans were missing in prod with AOT on and only appeared when the same image ran with AOT off. So vary values per environment, never the bean graph.",
+    "pass": "Profiles and everything that is a value are decided at startup, even with Spring AOT: one image became dev1, dev2, qa1 and prod1 with the right profiles, profile-file values and @Bean-method choice, and every environment used the same JDK AOT cache (trained with no profile active) and started as fast as prod1. What Spring AOT freezes is which beans exist: the @Profile(\"prod\") and @ConditionalOnProperty beans were missing in prod with AOT on and only appeared when the same image ran without Spring AOT, which also started measurably slower. So vary values per environment, never the bean graph.",
     "fail": "Not as expected: at least one result differs from the known behaviour. See 'Unexpected results' for what differed and what to check.",
-    "inconclusive": "Some results couldn't be judged; rerun the example."
+    "inconclusive": "Probably, but some startup times varied too much between runs to be sure. Close other workloads and rerun with more runs (make examples EX=02 RUNS=10)."
   },
   "tested": [
     "One image (profiles-app) built with Spring AOT and no profile active at build time.",
-    "Six instances of it: dev1, dev2, qa1, prod1 (profiles from APP_ENV + APP_ENV_INDEX), prod1 plus SPRING_PROFILES_ACTIVE=debug, and prod1 with Spring AOT switched off.",
-    "For each: active profiles, values from application-<profile>.yml, which Notifier the @Bean method chose, and whether the two pitfall beans exist (@Profile(\"prod\") and @ConditionalOnProperty)."
+    "Six instances of it: dev1, dev2, qa1, prod1 (profiles from APP_ENV + APP_ENV_INDEX), prod1 plus SPRING_PROFILES_ACTIVE=debug, and prod1 without Spring AOT (same image and JDK AOT cache, minus Spring AOT's generated bean code).",
+    "For each: active profiles, values from application-<profile>.yml, which Notifier the @Bean method chose, and whether the two pitfall beans exist (@Profile(\"prod\") and @ConditionalOnProperty).",
+    "Then each instance again on its own: once with class-load logging, to count how many classes came from the JDK AOT cache (trained in the build with no profile active), and RUNS times to time Spring's startup (median reported)."
   ],
+  "noiseBand": 0.25,
   "instances": [
-    { "name": "dev1",                  "env": "dev",  "index": "1", "spa": "",      "aot": "on",  "port": 8201, "profiles": "dev,dev1",         "db": "orders_dev1",  "notifier": "LogNotifier",   "pitfall": "nonprod" },
-    { "name": "dev2",                  "env": "dev",  "index": "2", "spa": "",      "aot": "on",  "port": 8202, "profiles": "dev,dev2",         "db": "orders_dev2",  "notifier": "LogNotifier",   "pitfall": "nonprod" },
-    { "name": "qa1",                   "env": "qa",   "index": "1", "spa": "",      "aot": "on",  "port": 8203, "profiles": "qa,qa1",           "db": "orders_qa1",   "notifier": "EmailNotifier", "pitfall": "nonprod" },
-    { "name": "prod1",                 "env": "prod", "index": "1", "spa": "",      "aot": "on",  "port": 8204, "profiles": "prod,prod1",       "db": "orders_prod1", "notifier": "PagerNotifier", "pitfall": "aot" },
-    { "name": "prod1 + debug profile", "env": "prod", "index": "1", "spa": "debug", "aot": "on",  "port": 8205, "profiles": "prod,prod1,debug", "db": "orders_prod1", "notifier": "PagerNotifier", "pitfall": "aot" },
-    { "name": "prod1, Spring AOT off", "env": "prod", "index": "1", "spa": "",      "aot": "off", "port": 8206, "profiles": "prod,prod1",       "db": "orders_prod1", "notifier": "PagerNotifier", "pitfall": "noaot" }
+    { "id": "dev1",                "name": "dev1",                     "env": "dev",  "index": "1", "spa": "",      "aot": "on",  "port": 8201, "profiles": "dev,dev1",         "db": "orders_dev1",  "notifier": "LogNotifier",   "pitfall": "nonprod" },
+    { "id": "dev2",                "name": "dev2",                     "env": "dev",  "index": "2", "spa": "",      "aot": "on",  "port": 8202, "profiles": "dev,dev2",         "db": "orders_dev2",  "notifier": "LogNotifier",   "pitfall": "nonprod" },
+    { "id": "qa1",                 "name": "qa1",                      "env": "qa",   "index": "1", "spa": "",      "aot": "on",  "port": 8203, "profiles": "qa,qa1",           "db": "orders_qa1",   "notifier": "EmailNotifier", "pitfall": "nonprod" },
+    { "id": "prod1",               "name": "prod1",                    "env": "prod", "index": "1", "spa": "",      "aot": "on",  "port": 8204, "profiles": "prod,prod1",       "db": "orders_prod1", "notifier": "PagerNotifier", "pitfall": "aot" },
+    { "id": "prod1-debug",         "name": "prod1 + debug profile",    "env": "prod", "index": "1", "spa": "debug", "aot": "on",  "port": 8205, "profiles": "prod,prod1,debug", "db": "orders_prod1", "notifier": "PagerNotifier", "pitfall": "aot" },
+    { "id": "prod1-no-spring-aot", "name": "prod1 without Spring AOT", "env": "prod", "index": "1", "spa": "",      "aot": "off", "port": 8206, "profiles": "prod,prod1",       "db": "orders_prod1", "notifier": "PagerNotifier", "pitfall": "noaot" }
   ],
   "checks": {
     "started": {
@@ -29,7 +31,7 @@
     },
     "aot": {
       "group": "Startup", "label": "Spring AOT generated code in use", "short": "Spring AOT on/off as intended",
-      "why": "The image starts with -Dspring.aot.enabled=true; the 'AOT off' instance overrides the entrypoint without it.",
+      "why": "The image starts with -Dspring.aot.enabled=true; 'prod1 without Spring AOT' overrides the entrypoint without it (but keeps the JDK AOT cache).",
       "ifUnexpected": ["Check the image's ENTRYPOINT (docker image inspect) still passes -Dspring.aot.enabled=true."]
     },
     "profiles": {
@@ -77,13 +79,72 @@
       "why": "Contrast: without Spring AOT the condition is evaluated at startup against application-prod.yml, so the bean appears.",
       "ifUnexpected": ["Check this instance really ran without AOT (its 'Spring AOT generated code in use' check)."]
     },
-    "startup-time": {
-      "group": "Measurements", "label": "startup time (Spring)",
-      "why": "Information only; this example is about behaviour, not speed."
+    "cache.dev1": {
+      "group": "JDK AOT cache used?", "label": "JDK AOT cache used", "expected": "USED",
+      "why": "The JDK AOT cache was trained in the image build with no profile active. It depends on the JDK, the classpath and the JVM flags, not on profiles or config files, so every environment uses it. Classes the training run never loaded come from the jar as usual.",
+      "ifUnexpected": ["If every instance shows 'not used', the image was built for another CPU architecture or JDK: rebuild it (make -C examples/02-dynamic-profiles image).", "Read the JVM's own message in the evidence file (from -Xlog:aot)."]
+    },
+    "cache.dev2": {
+      "group": "JDK AOT cache used?", "label": "JDK AOT cache used", "expected": "USED",
+      "why": "The JDK AOT cache was trained in the image build with no profile active. It depends on the JDK, the classpath and the JVM flags, not on profiles or config files, so every environment uses it. Classes the training run never loaded come from the jar as usual.",
+      "ifUnexpected": ["If every instance shows 'not used', the image was built for another CPU architecture or JDK: rebuild it (make -C examples/02-dynamic-profiles image).", "Read the JVM's own message in the evidence file (from -Xlog:aot)."]
+    },
+    "cache.qa1": {
+      "group": "JDK AOT cache used?", "label": "JDK AOT cache used", "expected": "USED",
+      "why": "The JDK AOT cache was trained in the image build with no profile active. It depends on the JDK, the classpath and the JVM flags, not on profiles or config files, so every environment uses it. Classes the training run never loaded come from the jar as usual.",
+      "ifUnexpected": ["If every instance shows 'not used', the image was built for another CPU architecture or JDK: rebuild it (make -C examples/02-dynamic-profiles image).", "Read the JVM's own message in the evidence file (from -Xlog:aot)."]
+    },
+    "cache.prod1": {
+      "group": "JDK AOT cache used?", "label": "JDK AOT cache used", "expected": "USED",
+      "why": "The JDK AOT cache was trained in the image build with no profile active. It depends on the JDK, the classpath and the JVM flags, not on profiles or config files, so every environment uses it. Classes the training run never loaded come from the jar as usual.",
+      "ifUnexpected": ["If every instance shows 'not used', the image was built for another CPU architecture or JDK: rebuild it (make -C examples/02-dynamic-profiles image).", "Read the JVM's own message in the evidence file (from -Xlog:aot)."]
+    },
+    "cache.prod1-debug": {
+      "group": "JDK AOT cache used?", "label": "JDK AOT cache used", "expected": "USED",
+      "why": "The JDK AOT cache was trained in the image build with no profile active. It depends on the JDK, the classpath and the JVM flags, not on profiles or config files, so every environment uses it. Classes the training run never loaded come from the jar as usual.",
+      "ifUnexpected": ["If every instance shows 'not used', the image was built for another CPU architecture or JDK: rebuild it (make -C examples/02-dynamic-profiles image).", "Read the JVM's own message in the evidence file (from -Xlog:aot)."]
+    },
+    "cache.prod1-no-spring-aot": {
+      "group": "JDK AOT cache used?", "label": "JDK AOT cache used", "expected": "USED",
+      "why": "The JDK AOT cache doesn't depend on Spring AOT: the JDK, classpath and JVM flags are the same, so the JVM uses it. Without Spring AOT, Spring loads extra classes to process the configuration at startup; those weren't in the training run and come from the jar. So this instance's startup differs from prod1 only by Spring AOT.",
+      "ifUnexpected": ["Read the JVM's own message in the evidence file (from -Xlog:aot).", "Check that demo.sh still starts this instance with -XX:AOTCache=/app/app.aot."]
+    }
+  },
+  "timings": {
+    "scenarios": {
+      "dev1": {
+        "label": "dev1", "compareTo": "prod1", "expect": "unchanged",
+        "why": "Same image, JVM flags and JDK AOT cache as prod1. Only the profiles and the config files they load differ, which costs nothing measurable."
+      },
+      "dev2": {
+        "label": "dev2", "compareTo": "prod1", "expect": "unchanged",
+        "why": "Same image, JVM flags and JDK AOT cache as prod1. Only the profiles and the config files they load differ, which costs nothing measurable."
+      },
+      "qa1": {
+        "label": "qa1", "compareTo": "prod1", "expect": "unchanged",
+        "why": "Same image, JVM flags and JDK AOT cache as prod1. Only the profiles and the config files they load differ, which costs nothing measurable."
+      },
+      "prod1": {
+        "label": "prod1", "compareTo": "prod1-no-spring-aot", "expect": "improved",
+        "why": "What Spring AOT is worth here: the same image and JDK AOT cache without Spring AOT is slower, because Spring then parses the configuration classes and evaluates their conditions at every startup. That is what you get in exchange for the bean graph being fixed at build time.",
+        "ifUnexpected": [
+          "Check the 'Spring AOT generated code in use' checks: true for prod1, false for prod1 without Spring AOT.",
+          "Was something else running? Check `make status`, then rerun with RUNS=10."
+        ]
+      },
+      "prod1-debug": {
+        "label": "prod1 + debug profile", "compareTo": "prod1", "expect": "unchanged",
+        "why": "An operator-added profile is one more config file to read: no measurable cost."
+      },
+      "prod1-no-spring-aot": {
+        "label": "prod1 without Spring AOT", "expect": "reference",
+        "why": "Reference: prod1 from the same image, still with the JDK AOT cache, but without Spring AOT's generated bean code."
+      }
     }
   },
   "reproduce": [
     "make examples EX=02                                          # build + full demo + report",
+    "make -C examples/02-dynamic-profiles demo RUNS=10                      # more timed runs per instance",
     "make -C examples/02-dynamic-profiles run APP_ENV=qa APP_ENV_INDEX=1   # one instance on :8201"
   ]
 }

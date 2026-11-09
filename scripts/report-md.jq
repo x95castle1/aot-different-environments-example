@@ -40,7 +40,7 @@ def section($title; $items; $none):
   "|---|---|",
   "| Started → finished (UTC) | \($R.run.started) → \($R.run.finished // "?") |",
   "| Revision | \($R.run.revision)\(if $R.run.uncommittedChanges then " (plus uncommitted changes)" else "" end) |",
-  ($R.run.images[] | "| Image | \(.ref | bt) · id \(.id[7:19]) · JDK \(.jdk // "?") · AOT cache trained with \((.trainingFlags // "?") | bt) |"),
+  ($R.run.images[] | "| Image | \(.ref | bt) · id \(.id[7:19]) · JDK \(.jdk // "?") · JDK AOT cache trained with \((.trainingFlags // "?") | bt) |"),
   (if $R.run.timedRunsPerScenario then "| Timed runs per scenario | \($R.run.timedRunsPerScenario) |" else empty end),
   "| Docker | \($R.run.docker.version // "?") · \($R.run.docker.arch // "?") · \($R.run.docker.cpus // "?") CPUs · \($R.run.docker.memGb // "?") GB |",
   "| Host | \($R.run.host) |",
@@ -52,7 +52,7 @@ def section($title; $items; $none):
   (if ($timings | length) > 0 then
      section("What improved"; $improved; "Nothing measured as improved."),
      (if $R.attribution then
-        "Where the gain comes from (median startup): neither \($R.attribution.neither)s → Spring AOT only \($R.attribution.springAotOnly)s → Spring AOT + AOT cache \($R.attribution.full)s. Spring AOT saved \($R.attribution.springAotSaved)s (\($R.attribution.springAotShare // "?")% of the gain), the AOT cache \($R.attribution.aotCacheSaved)s (\($R.attribution.aotCacheShare // "?")%).",
+        "Where the gain comes from (median startup): neither \($R.attribution.neither)s → Spring AOT only \($R.attribution.springAotOnly)s → Spring AOT + JDK AOT cache \($R.attribution.full)s. Spring AOT saved \($R.attribution.springAotSaved)s (\($R.attribution.springAotShare // "?")% of the gain), the JDK AOT cache \($R.attribution.aotCacheSaved)s (\($R.attribution.aotCacheShare // "?")%).",
         ""
       else empty end),
      (if ($unchanged | length) > 0 or $perf then section("Stayed the same (as intended)"; $unchanged; "Nothing in this category.") else empty end)
@@ -64,7 +64,8 @@ def section($title; $items; $none):
      (if ($works | length) == 0 then "Nothing passed."
       else ($works | group_by(.group)[]
             | "### \(.[0].group)", "",
-              (group_by(.id)[] | "- **\(.[0].check // .[0].label)**" + (if .[0].why != "" then ": \(.[0].why)" else "" end),
+              # One bullet per check and explanation, so per-scenario checks (cache.<id>) that say the same thing merge
+              (group_by([.check, .why])[] | "- **\(.[0].check // .[0].label)**" + (if .[0].why != "" then ": \(.[0].why)" else "" end),
                                  (.[] | "  - \(.subject // "result"): \(.measured)")),
               "") end),
      ""
@@ -93,7 +94,7 @@ def section($title; $items; $none):
    else empty end),
   (if ($timings | length) > 0 then
      "## Startup times", "",
-     "| Scenario | AOT cache | Runs (s) | Median | Compared with | Change | Outcome |",
+     "| Scenario | JDK AOT cache | Runs (s) | Median | Compared with | Change | Outcome |",
      "|---|---|---|---|---|---|---|",
      ($timings[] | "| \(.short | cell) | \(if .aotCache then "\(.aotCache.verdict) \(.aotCache.classes // "")" else "-" end) | \(.runs | map(if . == null then "fail" else tostring end) | join(", ")) | \(.median // "-")s | \((.compareToLabel // "-") | cell) | \(if .referenceMedian then "\(.change) (\(.median)s vs \(.referenceMedian)s)" else "-" end) | \(.outcome) |"),
      ""

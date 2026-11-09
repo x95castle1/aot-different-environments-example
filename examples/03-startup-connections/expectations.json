@@ -27,7 +27,7 @@
       "ifUnexpected": ["Check that build-time.yml is passed via spring.config.additional-location (pom.xml process-aot and docker/app.Dockerfile).", "It must not be a profile file (application-build.yml): the imports run before profile files are read."]
     },
     "build.training-offline": {
-      "group": "Build (no network)", "label": "AOT-cache training run", "expected": "succeeded with --network=none",
+      "group": "Build (no network)", "label": "JDK AOT-cache training run", "expected": "succeeded with --network=none",
       "why": "The training run starts the context (every bean is created) and exits before serving traffic; nothing in it needs a connection.",
       "ifUnexpected": ["Read the build log in the evidence for the exception.", "A bean that connects in its constructor or @PostConstruct would fail here; connect lazily instead."]
     },
