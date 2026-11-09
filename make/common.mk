@@ -1,6 +1,9 @@
 # Included by every Makefile in the repo.
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/..)
 SHELL := /bin/bash
+
+# No "What's next: docker scout ..." hints after builds.
+export DOCKER_CLI_HINTS := false
 .DEFAULT_GOAL := help
 
 # Local Maven builds need JDK 25. Use $JAVA_HOME if it already is 25, otherwise look in sdkman.

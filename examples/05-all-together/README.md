@@ -57,6 +57,13 @@ Where the values come from:
 
 `make aot-check`: prod1, dev1 and qa1 load ~11,000 of ~11,650 classes from the cache; dev2 (ZGC) loads 0 and still starts.
 
+## Reading the report
+
+`make demo` writes `reports/05-all-together/<run>/report.md` (for people) and `results.json` (for scripts and agents), plus the
+evidence in `raw/`. The terminal ends with the verdict, the answer, and what improved, what didn't and what was
+unexpected. PASS means every environment verified (`works`), the AOT cache was used everywhere except dev2/ZGC (`no-benefit-expected`), and Spring AOT + the cache started prod1 faster than neither (`improved`). The report also splits the gain between Spring AOT and the AOT cache. What each outcome means and how timings are judged: [docs/reading-reports.md](../../docs/reading-reports.md).
+The labels, expected values and explanations come from [`expectations.json`](expectations.json).
+
 ## Code
 
 - [`AuditConfig`](app/src/main/java/com/example/demo/audit/AuditConfig.java): choosing per environment the

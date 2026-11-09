@@ -1,0 +1,69 @@
+{
+  "example": "04-one-image",
+  "title": "04 · One build, promoted unchanged through every environment",
+  "kind": "functional",
+  "question": "The same build gets deployed to all environments. Can a Spring AOT + AOT-cache image be built once and promoted dev → qa → prod unchanged?",
+  "answer": {
+    "pass": "Yes. The image was built once, pushed, and only its digest was deployed to dev1, qa1 and prod1. The image contains no environment names, hosts or settings; each environment brought its own through env vars and a mounted config directory. All three ran the same image and reported the same build, each with its own settings, and all three used the AOT cache baked into it.",
+    "fail": "Not as expected: at least one result differs from the known behaviour. See 'Unexpected results' for what differed and what to check.",
+    "inconclusive": "Some results couldn't be judged; rerun the example."
+  },
+  "tested": [
+    "One build of one-image-app, pushed to a local registry (localhost:5001); the local tag is deleted so every environment pulls the digest.",
+    "A scan of the image (bundled config files and image env vars) for environment markers: env names, database hosts, on-call addresses.",
+    "Promotion: dev1 → qa1 → prod1, each deployed from the same digest with its own envs/<env>/app.env and envs/<env>/config.",
+    "Per environment: which digest runs, profiles, a setting from its config directory, and whether the JVM used the AOT cache with that environment's JVM flags."
+  ],
+  "checks": {
+    "promoted-digest": {
+      "group": "Build once",
+      "label": "promoted artifact (digest)",
+      "why": "Information: the one artifact every environment runs."
+    },
+    "scan": {
+      "group": "No environment config in the image", "label": "occurrences in the image", "expected": "0",
+      "why": "Everything environment-specific lives in envs/<env>/, outside the image, so the same image can go anywhere.",
+      "ifUnexpected": ["Something environment-specific was bundled: look for application-<env>.yml or hard-coded values in examples/04-one-image/app/src/main/resources.", "Or the Dockerfile sets an environment-specific ENV."]
+    },
+    "started": {
+      "group": "Promotion", "label": "started", "expected": "yes",
+      "why": "Same image, valid settings per environment.",
+      "ifUnexpected": ["Read the startup log in the evidence.", "Is the registry up (localhost:5001)? The environments pull the digest from it."]
+    },
+    "digest": {
+      "group": "Promotion", "label": "runs the promoted digest",
+      "why": "Deployments reference the digest, not a tag, so what runs is exactly what was built and tested earlier.",
+      "ifUnexpected": ["Check IMAGE_REF in compose.yml is the digest ref (name@sha256:...)."]
+    },
+    "profiles": {
+      "group": "Promotion", "label": "profiles (from envs/<env>/app.env)",
+      "why": "APP_ENV + APP_ENV_INDEX come from the environment's env file and become profiles at startup.",
+      "ifUnexpected": ["Check envs/<env>/app.env."]
+    },
+    "message": {
+      "group": "Promotion", "label": "app.message (from envs/<env>/config)",
+      "why": "The environment's config directory is mounted at /config and imported at startup (spring.config.import: optional:file:/config/).",
+      "ifUnexpected": ["Check the volume mount in compose.yml and envs/<env>/config/application.yml."]
+    },
+    "cache": {
+      "group": "Promotion", "label": "AOT cache used with this env's JVM flags", "short": "AOT cache used", "expected": "USED",
+      "why": "The environments' flags (different heap sizes; prod uses the training flags) are all compatible with the cache baked into the image.",
+      "ifUnexpected": ["Read the JVM's message in the evidence (from -Xlog:aot).", "Did someone add an incompatible flag (e.g. ZGC on JDK 25) to envs/<env>/app.env?"]
+    },
+    "across.images": {
+      "group": "Across environments", "label": "distinct images running", "expected": "1",
+      "why": "One build for every environment.",
+      "ifUnexpected": ["An environment is running something else: compare the digests in the promotion checks."]
+    },
+    "across.builds": {
+      "group": "Across environments", "label": "distinct build times reported by the apps", "expected": "1",
+      "why": "Each app reports the build-info Maven stamped into its jar; one value means one build, seen from inside the apps.",
+      "ifUnexpected": ["Check the build-info section of each environment's /info in the evidence."]
+    }
+  },
+  "reproduce": [
+    "make examples EX=04                      # build once, push, scan, promote, report",
+    "make -C examples/04-one-image status     # which digest each environment runs",
+    "make -C examples/04-one-image stop       # stop the registry and environments"
+  ]
+}

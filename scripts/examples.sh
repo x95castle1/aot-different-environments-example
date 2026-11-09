@@ -6,6 +6,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+. "$ROOT/scripts/lib.sh"
+
 EXAMPLES=()
 for d in examples/[0-9][0-9]-*/; do EXAMPLES+=("$(basename "$d")"); done
 
@@ -17,12 +19,52 @@ run_one() {
 }
 
 run_all() {
+  # One run id for every example, so their reports and the summary line up.
+  export REPORT_RUN_ID
+  REPORT_RUN_ID=$(date -u +%Y%m%dT%H%M%SZ)
+  local started; started=$(date -u +%FT%TZ)
+  acquire_demo_lock "make examples EX=all"   # before `make stop`, so a running demo isn't torn down
   make -s stop
-  local failed=()
-  for e in "${EXAMPLES[@]}"; do run_one "$e" || failed+=("$e"); done
+  for e in "${EXAMPLES[@]}"; do run_one "$e" || true; done
+  write_summary "$started"
+}
+
+# write_summary: reports/all/<run id>/summary.{json,md}, one line per example, from each results.json
+write_summary() {
+  local dir="reports/all/$REPORT_RUN_ID" entries=()
+  mkdir -p "$dir"
+  for e in "${EXAMPLES[@]}"; do
+    local results="reports/$e/$REPORT_RUN_ID/results.json"
+    if [[ -f "$results" ]]; then
+      entries+=("$(jq -c --arg report "../../$e/$REPORT_RUN_ID/report.md" '{example, title, kind, verdict, answer, counts, report: $report,
+          improved: [.results[] | select(.outcome == "improved") | .short] | unique,
+          notImproved: [.results[] | select(.outcome == "no-benefit-expected" or .outcome == "limitation-shown") | .short] | unique,
+          unexpected: [.results[] | select(.outcome == "unexpected") | .short] | unique}' "$results")")
+    else
+      entries+=("$(jq -n -c --arg e "$e" '{example: $e, title: $e, verdict: "ERROR", answer: "No report: the demo stopped before finishing. Rerun it alone (make examples EX=\($e[0:2])) and read its output.", counts: {}, report: null, improved: [], notImproved: [], unexpected: []}')")
+    fi
+  done
+  printf '%s\n' "${entries[@]}" | jq -s --arg run "$REPORT_RUN_ID" --arg started "$1" --arg finished "$(date -u +%FT%TZ)" \
+      --arg revision "$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" \
+    '{run: $run, started: $started, finished: $finished, revision: $revision,
+      verdict: (if any(.[]; .verdict == "FAIL" or .verdict == "ERROR") then "FAIL" elif any(.[]; .verdict == "INCONCLUSIVE") then "INCONCLUSIVE" else "PASS" end),
+      examples: .}' > "$dir/summary.json"
+  jq -r 'def list: if length == 0 then "-" else join("; ") end;
+    "# All examples: \(.verdict)", "",
+    "Run \(.run) · revision \(.revision) · \(.started) → \(.finished) (UTC). How to read reports: [docs/reading-reports.md](../../../docs/reading-reports.md).", "",
+    "| Example | Verdict | Improved | Didn'"'"'t improve / limitations | Unexpected | Report |",
+    "|---|---|---|---|---|---|",
+    (.examples[] | "| \(.title) | \(.verdict) | \(.improved | list) | \(.notImproved | list) | \(.unexpected | list) | \(if .report then "[report](\(.report))" else "-" end) |"),
+    "",
+    "## Answers", "",
+    (.examples[] | "- **\(.title)** (\(.verdict)): \(.answer)")' "$dir/summary.json" > "$dir/summary.md"
+  ln -sfn "$REPORT_RUN_ID" reports/all/latest
+
   echo
-  if (( ${#failed[@]} > 0 )); then printf '\033[31mFailed: %s\033[0m\n' "${failed[*]}"; exit 1; fi
-  printf '\033[32mAll %d examples passed.\033[0m\n' "${#EXAMPLES[@]}"
+  jq -r '.examples[] | "  \(.verdict | if . == "PASS" then "✓" else "✗" end) \(.title): \(.verdict)"' "$dir/summary.json"
+  printf '  Summary: %s\n' "$dir/summary.md"
+  release_demo_lock
+  [[ "$(jq -r .verdict "$dir/summary.json")" != "FAIL" ]] || exit 1
 }
 
 choice=${1:-}

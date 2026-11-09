@@ -1,0 +1,282 @@
+{
+  "example": "01-jvm-args",
+  "title": "01 · JVM arguments vary per environment",
+  "kind": "performance",
+  "question": "JVM arguments vary from environment to environment (prod chosen as the workaround). Does that break the JVM AOT cache, and does startup suffer?",
+  "answer": {
+    "pass": "No. The AOT cache was trained once, with the prod flags. Different heap sizes, a container memory limit, 1 CPU, extra system properties, GC logging and the Parallel GC all still used it and started as fast as prod (1 CPU is slower overall, but still faster than 1 CPU without the cache). Only ZGC, which the JDK 25 AOT cache doesn't support, fell back to a normal start, and -XX:AOTMode=on turns that fallback into a startup error.",
+    "fail": "Not as expected: at least one result differs from the known behaviour. See 'Unexpected results' for what differed and what to check.",
+    "inconclusive": "Probably, but some startup times varied too much between runs to be sure. Close other workloads and rerun with more runs (make examples EX=01 RUNS=10)."
+  },
+  "tested": [
+    "One image (jvm-args-app) whose AOT cache was trained in the build with the prod flags (the image's default JDK_JAVA_OPTIONS).",
+    "10 JVM-flag scenarios on that same image. Each runs once with class-load logging, to count how many classes came from the AOT cache, and RUNS times to time Spring's startup (median reported).",
+    "Two reference scenarios with the cache switched off (-XX:AOTMode=off), at full CPU and at 1 CPU, to measure what the cache is worth.",
+    "Guardrail: ZGC with -XX:AOTMode=on, which should refuse to start rather than silently start without the cache."
+  ],
+  "noiseBand": 0.25,
+  "scenarios": [
+    {
+      "id": "prod",
+      "label": "prod flags (trained with these)",
+      "flags": "",
+      "dockerOpts": ""
+    },
+    {
+      "id": "small-heap",
+      "label": "smaller heap (-Xmx256m)",
+      "flags": "-XX:+UseG1GC -Xmx256m -XX:+ExitOnOutOfMemoryError",
+      "dockerOpts": ""
+    },
+    {
+      "id": "big-heap",
+      "label": "bigger fixed heap (-Xms2g -Xmx2g)",
+      "flags": "-XX:+UseG1GC -Xms2g -Xmx2g -XX:+ExitOnOutOfMemoryError",
+      "dockerOpts": ""
+    },
+    {
+      "id": "mem512",
+      "label": "512 MB container, 50% RAM",
+      "flags": "-XX:+UseG1GC -XX:MaxRAMPercentage=50",
+      "dockerOpts": "--memory 512m"
+    },
+    {
+      "id": "cpu1",
+      "label": "1 CPU",
+      "flags": "",
+      "dockerOpts": "--cpus 1"
+    },
+    {
+      "id": "cpu1-off",
+      "label": "1 CPU, cache off (reference)",
+      "flags": "{PROD} -XX:AOTMode=off",
+      "dockerOpts": "--cpus 1"
+    },
+    {
+      "id": "extra-props",
+      "label": "extra -D props + GC logging",
+      "flags": "{PROD} -Dfeature.x=on -Duser.timezone=UTC -Xlog:gc",
+      "dockerOpts": ""
+    },
+    {
+      "id": "parallel",
+      "label": "Parallel GC",
+      "flags": "-XX:+UseParallelGC -XX:MaxRAMPercentage=75",
+      "dockerOpts": ""
+    },
+    {
+      "id": "zgc",
+      "label": "ZGC",
+      "flags": "-XX:+UseZGC -XX:MaxRAMPercentage=75",
+      "dockerOpts": ""
+    },
+    {
+      "id": "cache-off",
+      "label": "cache off (reference)",
+      "flags": "{PROD} -XX:AOTMode=off",
+      "dockerOpts": ""
+    }
+  ],
+  "checks": {
+    "started": {
+      "group": "Scenarios",
+      "label": "app started",
+      "expected": "yes",
+      "why": "Every scenario uses valid flags, so the app must start.",
+      "ifUnexpected": [
+        "Look at the container log: docker logs aot-01-jvm-args-run (rerun the scenario with make run FLAGS=...)",
+        "Is Docker short of memory for -Xms2g? (Docker memory in the Run table)"
+      ]
+    },
+    "cache.prod": {
+      "group": "AOT cache used?",
+      "label": "prod flags: AOT cache",
+      "short": "prod flags",
+      "expected": "USED",
+      "outcome": "works",
+      "why": "These are exactly the flags the cache was trained with (the image's default JDK_JAVA_OPTIONS), so every cached class is valid.",
+      "ifUnexpected": [
+        "Was the image built for this machine's CPU architecture? Compare the Docker arch in the Run table with where the image was built.",
+        "Rebuild the image (make -C examples/01-jvm-args image): the cache must be trained by the same JDK build that runs it.",
+        "Read the JVM's own message in the evidence file (from -Xlog:aot)."
+      ]
+    },
+    "cache.small-heap": {
+      "group": "AOT cache used?",
+      "label": "smaller heap: AOT cache",
+      "short": "smaller heap",
+      "expected": "USED",
+      "outcome": "works",
+      "why": "Heap size isn't something the cache depends on (as long as compressed oops stay on, i.e. a heap under ~32 GB).",
+      "ifUnexpected": [
+        "Read the JVM's own message in the evidence file (from -Xlog:aot).",
+        "Check the image's JDK and architecture in the Run table."
+      ]
+    },
+    "cache.big-heap": {
+      "group": "AOT cache used?",
+      "label": "bigger fixed heap: AOT cache",
+      "short": "bigger fixed heap",
+      "expected": "USED",
+      "outcome": "works",
+      "why": "A 2 GB heap still uses compressed oops, so the cache stays valid.",
+      "ifUnexpected": [
+        "Read the JVM's own message in the evidence file (from -Xlog:aot)."
+      ]
+    },
+    "cache.mem512": {
+      "group": "AOT cache used?",
+      "label": "512 MB container: AOT cache",
+      "short": "512 MB container",
+      "expected": "USED",
+      "outcome": "works",
+      "why": "A container memory limit and MaxRAMPercentage only change heap sizing.",
+      "ifUnexpected": [
+        "Read the JVM's own message in the evidence file (from -Xlog:aot)."
+      ]
+    },
+    "cache.cpu1": {
+      "group": "AOT cache used?",
+      "label": "1 CPU: AOT cache",
+      "short": "1 CPU",
+      "expected": "USED",
+      "outcome": "works",
+      "why": "The number of CPUs doesn't affect whether the cache is valid.",
+      "ifUnexpected": [
+        "Read the JVM's own message in the evidence file (from -Xlog:aot)."
+      ]
+    },
+    "cache.cpu1-off": {
+      "group": "AOT cache used?",
+      "label": "1 CPU, cache off: AOT cache",
+      "short": "1 CPU, cache off",
+      "expected": "not used",
+      "outcome": "info",
+      "why": "Reference run: -XX:AOTMode=off switches the cache off on purpose.",
+      "ifUnexpected": [
+        "The flag -XX:AOTMode=off didn't take effect; check the scenario's flags."
+      ]
+    },
+    "cache.extra-props": {
+      "group": "AOT cache used?",
+      "label": "extra -D props + GC logging: AOT cache",
+      "short": "extra -D props + GC logging",
+      "expected": "USED",
+      "outcome": "works",
+      "why": "System properties and logging flags don't affect the cache.",
+      "ifUnexpected": [
+        "Read the JVM's own message in the evidence file (from -Xlog:aot)."
+      ]
+    },
+    "cache.parallel": {
+      "group": "AOT cache used?",
+      "label": "Parallel GC: AOT cache",
+      "short": "Parallel GC",
+      "expected": "USED",
+      "outcome": "works",
+      "why": "Measured on JDK 25: a cache trained with G1 is still used with the Parallel GC.",
+      "ifUnexpected": [
+        "Different JDK version or vendor than the one this was measured on? Check the JDK in the Run table.",
+        "Read the JVM's own message in the evidence file (from -Xlog:aot)."
+      ]
+    },
+    "cache.zgc": {
+      "group": "AOT cache used?",
+      "label": "ZGC: AOT cache",
+      "short": "ZGC",
+      "expected": "not used",
+      "outcome": "no-benefit-expected",
+      "why": "The JDK 25 AOT cache can't be used with ZGC: ZGC runs without compressed oops, and the cache was built with them (the JVM's message below says exactly that). JDK 26 adds ZGC support (JEP 516). The JVM warns 'Unable to use AOT cache' and starts normally, without it.",
+      "ifUnexpected": [
+        "If the cache WAS used, the image's JDK is probably 26 or newer, where ZGC is supported. Check the JDK in the Run table and update this expectation."
+      ]
+    },
+    "cache.cache-off": {
+      "group": "AOT cache used?",
+      "label": "cache off: AOT cache",
+      "short": "cache off",
+      "expected": "not used",
+      "outcome": "info",
+      "why": "Reference run: -XX:AOTMode=off switches the cache off on purpose.",
+      "ifUnexpected": [
+        "The flag -XX:AOTMode=off didn't take effect; check the scenario's flags."
+      ]
+    },
+    "guardrail": {
+      "group": "Guardrail",
+      "label": "ZGC + -XX:AOTMode=on",
+      "short": "AOTMode=on guardrail",
+      "expected": "refused to start",
+      "outcome": "works",
+      "why": "-XX:AOTMode=on makes an unusable cache a startup error instead of a silent, slower start. Use it in prod if you'd rather fail than start slow.",
+      "ifUnexpected": [
+        "If it started, the cache was usable with ZGC (JDK 26+?) or AOTMode=on wasn't applied. Check the JDK in the Run table and the evidence."
+      ]
+    }
+  },
+  "timings": {
+    "scenarios": {
+      "prod": {
+        "compareTo": "cache-off",
+        "expect": "improved",
+        "why": "This is what the AOT cache is worth: the same prod flags with the cache switched off are much slower.",
+        "ifUnexpected": [
+          "Check the prod scenario's cache check: was the cache used?",
+          "Was something else running? Check `make status`, then rerun with RUNS=10."
+        ]
+      },
+      "small-heap": {
+        "compareTo": "prod",
+        "expect": "unchanged",
+        "why": "Same cache benefit as prod: heap size doesn't matter."
+      },
+      "big-heap": {
+        "compareTo": "prod",
+        "expect": "unchanged",
+        "why": "Same cache benefit as prod: a bigger heap doesn't matter."
+      },
+      "mem512": {
+        "compareTo": "prod",
+        "expect": "unchanged",
+        "why": "Same cache benefit as prod: a container memory limit doesn't matter."
+      },
+      "cpu1": {
+        "compareTo": "cpu1-off",
+        "expect": "improved",
+        "why": "1 CPU makes every start slower than prod, but compared with the same 1-CPU limit without the cache, the cache still helps a lot."
+      },
+      "cpu1-off": {
+        "expect": "reference",
+        "why": "Reference: 1 CPU with the cache off."
+      },
+      "extra-props": {
+        "compareTo": "prod",
+        "expect": "unchanged",
+        "band": 0.5,
+        "why": "Same cache benefit as prod. GC logging writes to stdout, which adds a little time, so this one gets a wider ±50% band."
+      },
+      "parallel": {
+        "compareTo": "prod",
+        "expect": "unchanged",
+        "why": "Same cache benefit as prod: the Parallel GC can use the G1-trained cache on JDK 25."
+      },
+      "zgc": {
+        "compareTo": "cache-off",
+        "expect": "no-benefit-expected",
+        "why": "With the cache unusable, ZGC starts about as fast as the cache-off reference: no benefit, as expected on JDK 25.",
+        "ifUnexpected": [
+          "If ZGC was much faster than cache-off, check its cache check: the JDK may be 26+, where ZGC can use the cache."
+        ]
+      },
+      "cache-off": {
+        "expect": "reference",
+        "why": "Reference: prod flags with the cache off."
+      }
+    }
+  },
+  "reproduce": [
+    "make examples EX=01                                    # build + full demo + report",
+    "make -C examples/01-jvm-args demo RUNS=10               # more timed runs per scenario",
+    "make -C examples/01-jvm-args run FLAGS=\"-XX:+UseZGC\"     # one instance on :8101 with your own flags"
+  ]
+}

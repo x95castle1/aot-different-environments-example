@@ -1,0 +1,113 @@
+{
+  "example": "05-all-together",
+  "title": "05 · All together",
+  "kind": "mixed",
+  "question": "All four at once: one image, four environments (dev1, dev2, qa1, prod1) with profiles decided at startup, config and secrets from Config Server and Vault, their own Mongo databases and their own JVM flags. Does it all work together, and what does it buy in startup time?",
+  "answer": {
+    "pass": "Yes. The same image ran as dev1, dev2, qa1 and prod1. Each got its own profiles, Config Server settings, Vault secrets and Mongo database, saw only its own data, and used its own JVM flags. dev1, qa1 and prod1 used the AOT cache; dev2 runs ZGC on purpose and fell back to a normal start, as expected on JDK 25. Against the real Config Server, Vault and Mongo, Spring AOT + the AOT cache started prod1 much faster than the same image with neither.",
+    "fail": "Not as expected: at least one result differs from the known behaviour. See 'Unexpected results' for what differed and what to check.",
+    "inconclusive": "Everything works, but some startup times varied too much between runs to judge the gain. Close other workloads and rerun (make -C examples/05-all-together startup-compare RUNS=5)."
+  },
+  "tested": [
+    "One image (demo-app) started as four environments against the shared Config Server, Vault and MongoDB, each with its own APP_ENV/APP_ENV_INDEX, Vault token and JVM flags.",
+    "Per environment: profiles, where its settings came from, Mongo connection with the password from Vault, the audit sink chosen at startup, the API key from Vault guarding writes, and data isolation.",
+    "Per environment: whether the JVM used the AOT cache with that environment's JVM flags (dev2 runs ZGC on purpose).",
+    "Startup time of prod1 against the real services, three ways from the same image: Spring AOT + AOT cache, Spring AOT only, neither (RUNS starts each)."
+  ],
+  "noiseBand": 0.25,
+  "checks": {
+    "started": {
+      "group": "Environments", "label": "healthy", "expected": "yes",
+      "why": "Infra is up and every environment was bootstrapped.",
+      "ifUnexpected": ["Read the environment's startup log in the evidence.", "Vault runs in dev mode (in-memory): if it was restarted, run make -C examples/05-all-together bootstrap apps."]
+    },
+    "profiles": {
+      "group": "Decided at startup", "label": "profiles",
+      "why": "APP_ENV + APP_ENV_INDEX become profiles at startup (example 02).",
+      "ifUnexpected": ["Check APP_ENV / APP_ENV_INDEX for this service in compose.yml."]
+    },
+    "mongo-db": {
+      "group": "Decided at startup", "label": "Mongo database (from Config Server)",
+      "why": "Each environment's database name comes from infra/config-repo/demo-app-<env>.yml at startup (example 03).",
+      "ifUnexpected": ["Check infra/config-repo/demo-app-<env>.yml."]
+    },
+    "mongo-ping": {
+      "group": "Decided at startup", "label": "Mongo connection (password from Vault)", "expected": "ok",
+      "why": "The password exists only in Vault; each environment reads its own at startup.",
+      "ifUnexpected": ["Rerun the bootstrap: make -C examples/05-all-together bootstrap apps"]
+    },
+    "audit-sink": {
+      "group": "Decided at startup", "label": "audit sink (@Bean method)",
+      "why": "Chosen at startup inside a @Bean method from a Config Server value: log in dev, Mongo in qa/prod.",
+      "ifUnexpected": ["Check app.audit.sink in infra/config-repo/demo-app-<tier>.yml."]
+    },
+    "aot": {
+      "group": "Decided at startup", "label": "Spring AOT generated code in use", "expected": "true",
+      "why": "The image starts with -Dspring.aot.enabled=true.",
+      "ifUnexpected": ["Check the image's ENTRYPOINT."]
+    },
+    "post-401": {
+      "group": "Secrets and data", "label": "write without the Vault API key", "expected": "401",
+      "why": "Writes need X-Api-Key, the environment's key from Vault.",
+      "ifUnexpected": ["Check GreetingController and that app.api-key came from Vault."]
+    },
+    "greeting-env": {
+      "group": "Secrets and data", "label": "write with the API key lands in this env",
+      "why": "The write used this environment's API key and database.",
+      "ifUnexpected": ["Check the environment's Vault secret (secret/demo-app/<env>)."]
+    },
+    "isolation": {
+      "group": "Secrets and data", "label": "other environments' data visible", "expected": "0",
+      "why": "Each environment has its own database and Mongo user.",
+      "ifUnexpected": ["Two environments share a database: check infra/config-repo/demo-app-<env>.yml."]
+    },
+    "across.images": {
+      "group": "Across environments", "label": "distinct images running", "expected": "1",
+      "why": "One image for every environment (example 04).",
+      "ifUnexpected": ["An environment runs a different image; check compose.yml."]
+    },
+    "across.secrets": {
+      "group": "Across environments", "label": "distinct secret sets", "expected": "4",
+      "why": "Every environment has its own Mongo password and API key.",
+      "ifUnexpected": ["Rerun the bootstrap."]
+    },
+    "cache": {
+      "group": "AOT cache per environment", "label": "AOT cache used with this env's JVM flags", "short": "AOT cache used", "expected": "USED",
+      "why": "This environment's flags are compatible with the cache trained with the prod flags (example 01).",
+      "ifUnexpected": ["Read the JVM's message in the evidence (from -Xlog:aot).", "Check this service's JDK_JAVA_OPTIONS in compose.yml."]
+    },
+    "cache.zgc": {
+      "group": "AOT cache per environment", "label": "AOT cache with ZGC", "short": "AOT cache unusable with ZGC", "expected": "not used", "outcome": "no-benefit-expected",
+      "why": "dev2 runs ZGC on purpose. The JDK 25 AOT cache can't be used with ZGC (ZGC runs without compressed oops, which the cache was built with), so the JVM starts normally without it.",
+      "ifUnexpected": ["If the cache was used, the JDK is probably 26+ (ZGC support, JEP 516). Check the JDK in the Run table."]
+    },
+    "failfast.configserver": {
+      "group": "Fail fast", "label": "Config Server unreachable", "expected": "refused to start",
+      "why": "fail-fast: true at runtime (example 03).", "ifUnexpected": ["Check spring.cloud.config.fail-fast in application.yml."]
+    },
+    "failfast.vault": {
+      "group": "Fail fast", "label": "Vault unreachable", "expected": "refused to start",
+      "why": "spring.cloud.vault.fail-fast: true at runtime.", "ifUnexpected": ["Check spring.cloud.vault.fail-fast in application.yml."]
+    },
+    "failfast.token": {
+      "group": "Fail fast", "label": "dev1 with qa1's Vault token", "expected": "refused to start",
+      "why": "qa1's token can only read qa1's secrets; Vault answers 403 for dev1's.", "ifUnexpected": ["Check the Vault policies written by infra/bootstrap.sh."]
+    }
+  },
+  "timings": {
+    "scenarios": {
+      "full":     { "label": "Spring AOT + AOT cache (default)", "compareTo": "neither", "expect": "improved",
+                    "why": "Spring AOT skips bean-definition work at startup, and the AOT cache skips class loading/linking. Together they beat the same image with neither, even with real network round trips to Config Server and Vault." },
+      "aot-only": { "label": "Spring AOT only", "compareTo": "neither", "expect": "info",
+                    "why": "For attribution: how much of the gain is Spring AOT alone." },
+      "neither":  { "label": "neither (plain JVM)", "expect": "reference", "why": "Reference: the same image without Spring AOT or the AOT cache." }
+    }
+  },
+  "attribution": { "full": "full", "springAotOnly": "aot-only", "neither": "neither" },
+  "reproduce": [
+    "make examples EX=05                                   # full demo + report",
+    "make -C examples/05-all-together start                # just start everything (ports 8081-8084)",
+    "make -C examples/05-all-together startup-compare RUNS=5",
+    "make -C examples/05-all-together fail-fast-demo"
+  ]
+}

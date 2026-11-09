@@ -39,6 +39,13 @@ make stop     # stop dev1 (infra keeps running; make -C ../../infra stop)
   Vault token invalid:       VaultException: Status 403 ...      ✓ refused to start
 ```
 
+## Reading the report
+
+`make demo` writes `reports/03-startup-connections/<run>/report.md` (for people) and `results.json` (for scripts and agents), plus the
+evidence in `raw/`. The terminal ends with the verdict, the answer, and what improved, what didn't and what was
+unexpected. PASS means both build steps ran offline with the imports skipped (the build log and a summary are in `raw/`), dev1 loaded its Config Server file and Vault path and reached Mongo, the rotated password was picked up after a restart, and all three broken setups refused to start (the root cause of each is in `raw/failfast-*.log`). What each outcome means and how timings are judged: [docs/reading-reports.md](../../docs/reading-reports.md).
+The labels, expected values and explanations come from [`expectations.json`](expectations.json).
+
 ## How it works
 
 - [`application.yml`](app/src/main/resources/application.yml) (the same everywhere) imports

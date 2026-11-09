@@ -23,7 +23,12 @@ make stop       # stop everything (all examples + shared infra)
 make clean      # stop everything, delete images, volumes, secrets and build output
 ```
 
-Needs Docker, `jq`, `fzf` (for `make logs`) and, only for `make test`/`make build`, a local JDK 25.
+Needs Docker, `jq`, `fzf` (for the pickers) and, only for `make test`/`make build`, a local JDK 25.
+
+**Every run writes a report** to `reports/<example>/<run>/`: `report.md` (verdict, answer, what was tested, what
+improved, what didn't and why, unexpected results with what to check), `results.json` (the same, structured) and the
+raw evidence. `make examples EX=all` adds `reports/all/<run>/summary.md`. How to read them:
+[docs/reading-reports.md](docs/reading-reports.md). Running these with an AI agent: [AGENTS.md](AGENTS.md).
 
 ## The one idea behind all of it
 
@@ -59,7 +64,10 @@ common/                 shared: EnvironmentProfilesPostProcessor (APP_ENV -> pro
 docker/app.Dockerfile   one Dockerfile for every example: offline Maven + Spring AOT, offline AOT-cache training
 infra/                  Config Server, Vault, MongoDB (shared by 03 and 05), config-repo, bootstrap.sh
 examples/NN-*/          app/ (Maven module), Makefile (help/demo/stop/clean/…), demo.sh, README.md
-scripts/lib.sh          demo helpers: checks, startup timing, AOT-cache usage counting
+scripts/lib.sh          demo helpers: expect/record_timing (reporting), startup timing, AOT-cache usage counting
+scripts/report*.jq      turn a run's records + expectations.json into results.json and report.md
+examples/NN-*/expectations.json   per example: expected results, explanations, hints, timing rules
+docs/reading-reports.md how to read the reports (outcomes, verdicts, timing rules, schema)
 scripts/examples.sh     fzf example picker behind `make examples`
 scripts/logs.sh         fzf log picker
 make/common.mk          shared Makefile bits (help, JDK 25 detection, git revision)

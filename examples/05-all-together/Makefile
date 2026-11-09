@@ -8,7 +8,8 @@ ENVS := dev1 dev2 qa1 prod1
 ENV ?= dev1
 
 .PHONY: demo
-demo: start verify aot-check ## Full demo: start everything, verify every env, check AOT-cache use
+demo: ## Full demo + report: start everything, verify every env, check AOT-cache use, compare startup times
+	./scripts/demo.sh
 
 .PHONY: image
 image: ## Build the ONE app image (Spring AOT + AOT-cache training, offline)

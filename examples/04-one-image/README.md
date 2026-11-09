@@ -38,6 +38,13 @@ make stop     # stop the registry and environments
   prod1  63fd0eebcfd1   mongodb://prod-db.internal:27017/orders_prod1    -XX:MaxRAMPercentage=75    7520/7680
 ```
 
+## Reading the report
+
+`make demo` writes `reports/04-one-image/<run>/report.md` (for people) and `results.json` (for scripts and agents), plus the
+evidence in `raw/`. The terminal ends with the verdict, the answer, and what improved, what didn't and what was
+unexpected. PASS means the image scan found no environment markers (`raw/image-scan.txt` lists what is bundled), every environment ran the promoted digest with its own settings, used the AOT cache, and reported the same build. What each outcome means and how timings are judged: [docs/reading-reports.md](../../docs/reading-reports.md).
+The labels, expected values and explanations come from [`expectations.json`](expectations.json).
+
 ## How it works
 
 - [`compose.yml`](compose.yml): every environment uses `image: ${IMAGE_REF}`, which the demo sets to

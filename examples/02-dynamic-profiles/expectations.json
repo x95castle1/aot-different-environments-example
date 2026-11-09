@@ -1,0 +1,89 @@
+{
+  "example": "02-dynamic-profiles",
+  "title": "02 · Active profiles decided per environment at startup",
+  "kind": "functional",
+  "question": "The app has dynamic active profiles that vary by environment/index and can't be fixed at build time. Spring AOT runs at build time; does that freeze the profiles?",
+  "answer": {
+    "pass": "Profiles and everything that is a value are decided at startup, even with Spring AOT: one image became dev1, dev2, qa1 and prod1 with the right profiles, profile-file values and @Bean-method choice. What Spring AOT freezes is which beans exist: the @Profile(\"prod\") and @ConditionalOnProperty beans were missing in prod with AOT on and only appeared when the same image ran with AOT off. So vary values per environment, never the bean graph.",
+    "fail": "Not as expected: at least one result differs from the known behaviour. See 'Unexpected results' for what differed and what to check.",
+    "inconclusive": "Some results couldn't be judged; rerun the example."
+  },
+  "tested": [
+    "One image (profiles-app) built with Spring AOT and no profile active at build time.",
+    "Six instances of it: dev1, dev2, qa1, prod1 (profiles from APP_ENV + APP_ENV_INDEX), prod1 plus SPRING_PROFILES_ACTIVE=debug, and prod1 with Spring AOT switched off.",
+    "For each: active profiles, values from application-<profile>.yml, which Notifier the @Bean method chose, and whether the two pitfall beans exist (@Profile(\"prod\") and @ConditionalOnProperty)."
+  ],
+  "instances": [
+    { "name": "dev1",                  "env": "dev",  "index": "1", "spa": "",      "aot": "on",  "port": 8201, "profiles": "dev,dev1",         "db": "orders_dev1",  "notifier": "LogNotifier",   "pitfall": "nonprod" },
+    { "name": "dev2",                  "env": "dev",  "index": "2", "spa": "",      "aot": "on",  "port": 8202, "profiles": "dev,dev2",         "db": "orders_dev2",  "notifier": "LogNotifier",   "pitfall": "nonprod" },
+    { "name": "qa1",                   "env": "qa",   "index": "1", "spa": "",      "aot": "on",  "port": 8203, "profiles": "qa,qa1",           "db": "orders_qa1",   "notifier": "EmailNotifier", "pitfall": "nonprod" },
+    { "name": "prod1",                 "env": "prod", "index": "1", "spa": "",      "aot": "on",  "port": 8204, "profiles": "prod,prod1",       "db": "orders_prod1", "notifier": "PagerNotifier", "pitfall": "aot" },
+    { "name": "prod1 + debug profile", "env": "prod", "index": "1", "spa": "debug", "aot": "on",  "port": 8205, "profiles": "prod,prod1,debug", "db": "orders_prod1", "notifier": "PagerNotifier", "pitfall": "aot" },
+    { "name": "prod1, Spring AOT off", "env": "prod", "index": "1", "spa": "",      "aot": "off", "port": 8206, "profiles": "prod,prod1",       "db": "orders_prod1", "notifier": "PagerNotifier", "pitfall": "noaot" }
+  ],
+  "checks": {
+    "started": {
+      "group": "Startup", "label": "started", "expected": "yes",
+      "why": "Every instance is the same image with valid settings.",
+      "ifUnexpected": ["Look at the container log in the evidence file.", "Is the image built? make -C examples/02-dynamic-profiles image"]
+    },
+    "aot": {
+      "group": "Startup", "label": "Spring AOT generated code in use", "short": "Spring AOT on/off as intended",
+      "why": "The image starts with -Dspring.aot.enabled=true; the 'AOT off' instance overrides the entrypoint without it.",
+      "ifUnexpected": ["Check the image's ENTRYPOINT (docker image inspect) still passes -Dspring.aot.enabled=true."]
+    },
+    "profiles": {
+      "group": "Decided at startup", "label": "active profiles",
+      "why": "EnvironmentProfilesPostProcessor (common/) turns APP_ENV + APP_ENV_INDEX into '<env>,<env><index>' at startup, before config files load. Profiles from SPRING_PROFILES_ACTIVE are kept and go last, so they override.",
+      "ifUnexpected": ["Is EnvironmentProfilesPostProcessor registered? (common/src/main/resources/META-INF/spring.factories)", "Check the instance's APP_ENV / APP_ENV_INDEX in the evidence (startup log)."]
+    },
+    "db-name": {
+      "group": "Decided at startup", "label": "app.db-name (from application-<env>.yml)",
+      "why": "Profile-specific files are read at startup, so each environment gets its own values even though the image is the same.",
+      "ifUnexpected": ["Did the profiles come out right? The value follows the profile.", "Check the application-<profile>.yml files in the app's resources."]
+    },
+    "notifier": {
+      "group": "Decided at startup", "label": "notifier (@Bean method)",
+      "why": "The AOT-safe pattern: one bean definition fixed at build time; its method body runs at startup and picks Log/Email/PagerNotifier from app.notifier.",
+      "ifUnexpected": ["Check app.notifier in the profile files, and NotifierConfig."]
+    },
+    "pitfall.profile.nonprod": {
+      "group": "Pitfall beans", "label": "@Profile(\"prod\") bean exists", "expected": "false",
+      "why": "Not prod, so the bean is absent with or without AOT. This instance doesn't show the limitation.",
+      "ifUnexpected": ["The bean exists outside prod: check ProdOnlyAuditor's @Profile."]
+    },
+    "pitfall.conditional.nonprod": {
+      "group": "Pitfall beans", "label": "@ConditionalOnProperty bean exists", "expected": "false",
+      "why": "app.fancy-feature is false outside prod, so the bean is absent with or without AOT.",
+      "ifUnexpected": ["Check app.fancy-feature in the non-prod profile files."]
+    },
+    "pitfall.profile.aot": {
+      "group": "Pitfall beans", "label": "@Profile(\"prod\") bean exists", "short": "@Profile(\"prod\") bean missing in prod", "expected": "false", "outcome": "limitation-shown",
+      "why": "Spring AOT evaluated @Profile once, at build time, when no profile was active, so the bean isn't in the generated bean graph. In prod, where it 'should' exist, it doesn't. Don't use @Profile to vary beans per environment with AOT.",
+      "ifUnexpected": ["If the bean exists, Spring AOT probably isn't active: check the 'Spring AOT generated code in use' check for this instance.", "Or the image was built with the prod profile active during process-aot."]
+    },
+    "pitfall.conditional.aot": {
+      "group": "Pitfall beans", "label": "@ConditionalOnProperty bean exists", "short": "@ConditionalOnProperty bean missing in prod", "expected": "false", "outcome": "limitation-shown",
+      "why": "application-prod.yml sets app.fancy-feature=true, but Spring AOT evaluated the condition at build time, when it was false. A runtime property can't add or remove a bean under AOT.",
+      "ifUnexpected": ["If the bean exists, Spring AOT probably isn't active: check the 'Spring AOT generated code in use' check for this instance."]
+    },
+    "pitfall.profile.noaot": {
+      "group": "Pitfall beans", "label": "@Profile(\"prod\") bean exists", "expected": "true",
+      "why": "Contrast: without Spring AOT, Spring evaluates @Profile at startup, so the prod bean appears. That's what people expect, and why the AOT behaviour surprises them.",
+      "ifUnexpected": ["Check this instance really ran without AOT (its 'Spring AOT generated code in use' check)."]
+    },
+    "pitfall.conditional.noaot": {
+      "group": "Pitfall beans", "label": "@ConditionalOnProperty bean exists", "expected": "true",
+      "why": "Contrast: without Spring AOT the condition is evaluated at startup against application-prod.yml, so the bean appears.",
+      "ifUnexpected": ["Check this instance really ran without AOT (its 'Spring AOT generated code in use' check)."]
+    },
+    "startup-time": {
+      "group": "Measurements", "label": "startup time (Spring)",
+      "why": "Information only; this example is about behaviour, not speed."
+    }
+  },
+  "reproduce": [
+    "make examples EX=02                                          # build + full demo + report",
+    "make -C examples/02-dynamic-profiles run APP_ENV=qa APP_ENV_INDEX=1   # one instance on :8201"
+  ]
+}

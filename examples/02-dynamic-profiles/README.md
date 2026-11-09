@@ -36,6 +36,13 @@ prod1, Spring AOT OFF  off  prod,prod1        orders_prod1  PagerNotifier  true 
   `application-prod.yml`) **don't exist in prod1 with AOT on**. They only appear when the same image runs without AOT.
 - An operator-added profile (`SPRING_PROFILES_ACTIVE=debug`) is kept and goes **last**, so its values win.
 
+## Reading the report
+
+`make demo` writes `reports/02-dynamic-profiles/<run>/report.md` (for people) and `results.json` (for scripts and agents), plus the
+evidence in `raw/`. The terminal ends with the verdict, the answer, and what improved, what didn't and what was
+unexpected. PASS means profiles, values and the `@Bean` choice followed every environment (`works`), and the pitfall beans were missing in prod with AOT on (`limitation-shown`, by design) but present with AOT off. Each instance's `/info/profiles` JSON and startup log are in `raw/`. What each outcome means and how timings are judged: [docs/reading-reports.md](../../docs/reading-reports.md).
+The labels, expected values and explanations come from [`expectations.json`](expectations.json).
+
 ## How it works
 
 - [`EnvironmentProfilesPostProcessor`](../../common/src/main/java/com/example/common/env/EnvironmentProfilesPostProcessor.java)
