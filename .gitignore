@@ -1,0 +1,5 @@
+target/
+.secrets/
+.idea/
+*.iml
+.DS_Store

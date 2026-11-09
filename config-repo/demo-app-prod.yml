@@ -1,0 +1,4 @@
+# Settings for every prod environment.
+app:
+  audit:
+    sink: mongo

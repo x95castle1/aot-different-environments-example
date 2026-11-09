@@ -1,0 +1,7 @@
+# Settings for every dev environment.
+app:
+  audit:
+    sink: log
+logging:
+  level:
+    com.example.demo: DEBUG

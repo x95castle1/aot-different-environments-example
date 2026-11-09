@@ -1,0 +1,4 @@
+# Settings for every qa environment.
+app:
+  audit:
+    sink: mongo

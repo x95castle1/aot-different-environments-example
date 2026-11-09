@@ -1,0 +1,116 @@
+# Local demo: shared infrastructure + four "environments" running the SAME demo-app image.
+# Each environment differs only in env vars: which profile it is, where its servers are,
+# its own Vault token (written by scripts/bootstrap.sh) and its JVM flags.
+#
+# Demo-only credentials below (Vault root token, Mongo root password). Never do this for real.
+
+name: aot-demo
+
+x-app: &app
+  image: demo-app:1.0.0
+  pull_policy: never
+  mem_limit: 768m
+  restart: "no"
+
+x-app-env: &app-env
+  CONFIG_SERVER_URL: http://config-server:8888
+  VAULT_ADDR: http://vault:8200
+
+services:
+  # ---------------------------------------------------------------- infrastructure
+  config-server:
+    build:
+      context: .
+      dockerfile: config-server/Dockerfile
+    image: demo-config-server:1.0.0
+    volumes:
+      - ./config-repo:/config-repo:ro
+    ports:
+      - "8888:8888"
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8888/actuator/health"]
+      interval: 3s
+      retries: 40
+
+  vault:
+    image: hashicorp/vault:2.1
+    cap_add: [IPC_LOCK]
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: root
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    ports:
+      - "8200:8200"
+    healthcheck:
+      test: ["CMD", "vault", "status", "-address=http://127.0.0.1:8200"]
+      interval: 3s
+      retries: 40
+
+  mongo:
+    image: mongo:8.0
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 3s
+      retries: 40
+
+  # ---------------------------------------------------------------- environments (same image)
+  app-dev1:
+    <<: *app
+    build:            # the only service that builds the image; the others reuse it
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      <<: *app-env
+      APP_ENV: dev
+      APP_ENV_INDEX: "1"
+      JDK_JAVA_OPTIONS: -XX:+UseG1GC -Xmx256m -XX:+ExitOnOutOfMemoryError
+    env_file:
+      - path: .secrets/dev1.env
+        required: false
+    ports:
+      - "8081:8080"
+
+  app-dev2:
+    <<: *app
+    environment:
+      <<: *app-env
+      APP_ENV: dev
+      APP_ENV_INDEX: "2"
+      # Deliberately different GC: on JDK 25 the AOT cache can't be used with ZGC, so this
+      # environment shows the fallback (a warning, then a normal, slower start).
+      JDK_JAVA_OPTIONS: -XX:+UseZGC -Xmx256m -XX:+ExitOnOutOfMemoryError
+    env_file:
+      - path: .secrets/dev2.env
+        required: false
+    ports:
+      - "8082:8080"
+
+  app-qa1:
+    <<: *app
+    environment:
+      <<: *app-env
+      APP_ENV: qa
+      APP_ENV_INDEX: "1"
+      JDK_JAVA_OPTIONS: -XX:+UseG1GC -Xmx384m -XX:+ExitOnOutOfMemoryError
+    env_file:
+      - path: .secrets/qa1.env
+        required: false
+    ports:
+      - "8083:8080"
+
+  app-prod1:
+    <<: *app
+    environment:
+      <<: *app-env
+      APP_ENV: prod
+      APP_ENV_INDEX: "1"
+      # No JDK_JAVA_OPTIONS: prod runs with the image's default flags, the ones the AOT cache was trained with.
+    env_file:
+      - path: .secrets/prod1.env
+        required: false
+    ports:
+      - "8084:8080"

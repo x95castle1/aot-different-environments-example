@@ -1,0 +1,6 @@
+# Settings for the prod1 environment only. The password comes from Vault (secret/demo-app/prod1).
+spring:
+  mongodb:
+    database: demo_prod1
+    username: demo_prod1
+    authentication-database: demo_prod1

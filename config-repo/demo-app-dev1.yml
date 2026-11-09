@@ -1,0 +1,6 @@
+# Settings for the dev1 environment only. The password comes from Vault (secret/demo-app/dev1).
+spring:
+  mongodb:
+    database: demo_dev1
+    username: demo_dev1
+    authentication-database: demo_dev1

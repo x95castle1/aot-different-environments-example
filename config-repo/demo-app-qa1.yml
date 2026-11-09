@@ -1,0 +1,6 @@
+# Settings for the qa1 environment only. The password comes from Vault (secret/demo-app/qa1).
+spring:
+  mongodb:
+    database: demo_qa1
+    username: demo_qa1
+    authentication-database: demo_qa1

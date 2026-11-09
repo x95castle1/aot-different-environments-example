@@ -1,0 +1,8 @@
+# Shared by every environment. Profile files (demo-app-{profile}.yml) override these.
+spring:
+  mongodb:
+    host: mongo
+    port: 27017
+app:
+  audit:
+    sink: log
