@@ -1,0 +1,6 @@
+# qa1: settings for this environment only, mounted at /config. Not in the image.
+app:
+  message: "Hello from qa1"
+  region: us-east-1
+  db-url: mongodb://qa-db.internal:27017/orders_qa1
+  support-email: qa-oncall@example.com

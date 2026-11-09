@@ -1,0 +1,3 @@
+# Extra profile an operator can add with SPRING_PROFILES_ACTIVE=debug
+app:
+  extra: "debug profile active"

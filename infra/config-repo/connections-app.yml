@@ -1,0 +1,5 @@
+# Example 03: shared by every environment of connections-app.
+spring:
+  mongodb:
+    host: mongo
+    port: 27017

@@ -1,0 +1,50 @@
+# Shared infrastructure for examples 03 and 05: Config Server, Vault, MongoDB.
+# Its own compose project; apps join the `aot-infra` network to reach it.
+#
+# Demo-only credentials (Vault root token, Mongo root password). Never do this for real.
+
+name: aot-infra
+
+networks:
+  default:
+    name: aot-infra
+
+services:
+  config-server:
+    build:
+      context: ..
+      dockerfile: infra/config-server/Dockerfile
+    image: demo-config-server:1.0.0
+    volumes:
+      - ./config-repo:/config-repo:ro
+    ports:
+      - "8888:8888"
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8888/actuator/health"]
+      interval: 3s
+      retries: 40
+
+  vault:
+    image: hashicorp/vault:2.1
+    cap_add: [IPC_LOCK]
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: root
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    ports:
+      - "8200:8200"
+    healthcheck:
+      test: ["CMD", "vault", "status", "-address=http://127.0.0.1:8200"]
+      interval: 3s
+      retries: 40
+
+  mongo:
+    image: mongo:8.0
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 3s
+      retries: 40

@@ -1,0 +1,4 @@
+# Every dev environment
+app:
+  message: "Hello from the dev tier"
+  notifier: log

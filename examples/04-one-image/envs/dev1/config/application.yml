@@ -1,0 +1,6 @@
+# dev1: settings for this environment only, mounted at /config. Not in the image.
+app:
+  message: "Hello from dev1"
+  region: us-east-2
+  db-url: mongodb://dev-db.internal:27017/orders_dev1
+  support-email: dev-oncall@example.com

@@ -1,0 +1,6 @@
+# Every prod environment
+app:
+  message: "Hello from the prod tier"
+  notifier: pager
+  # Read by FancyFeature's @ConditionalOnProperty. Has NO effect with Spring AOT (see pitfall package).
+  fancy-feature: true

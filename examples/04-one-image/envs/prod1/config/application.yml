@@ -1,0 +1,6 @@
+# prod1: settings for this environment only, mounted at /config. Not in the image.
+app:
+  message: "Hello from prod1"
+  region: us-east-1
+  db-url: mongodb://prod-db.internal:27017/orders_prod1
+  support-email: prod-oncall@example.com

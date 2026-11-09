@@ -1,0 +1,25 @@
+# Example 03: one environment (dev1) of connections-app on the shared infrastructure
+# (infra/compose.yml: Config Server, Vault, Mongo on the aot-infra network).
+
+name: aot-03-startup-connections
+
+networks:
+  default:
+    name: aot-infra
+    external: true
+
+services:
+  app-dev1:
+    image: connections-app:1.0.0
+    pull_policy: never
+    restart: "no"
+    environment:
+      APP_ENV: dev
+      APP_ENV_INDEX: "1"
+      CONFIG_SERVER_URL: http://config-server:8888
+      VAULT_ADDR: http://vault:8200
+    env_file:
+      - path: ../../.secrets/connections-app/dev1.env   # VAULT_TOKEN, written by infra/bootstrap.sh
+        required: false
+    ports:
+      - "8301:8080"

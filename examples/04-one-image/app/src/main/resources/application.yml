@@ -1,0 +1,18 @@
+# The ONLY config baked into the image: environment-neutral defaults. Every environment value comes
+# from outside: env vars (envs/<env>/app.env) and /config/application.yml (envs/<env>/config).
+spring:
+  application:
+    name: one-image-app
+  config:
+    # Each environment mounts its own config directory here; its application.yml overrides this file.
+    import: optional:file:/config/
+app:
+  message: "not configured"
+  region: "not configured"
+  db-url: "not configured"
+  support-email: "not configured"
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

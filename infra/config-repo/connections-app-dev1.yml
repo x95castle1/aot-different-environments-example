@@ -1,0 +1,6 @@
+# Example 03: dev1 only. The password comes from Vault (secret/connections-app/dev1).
+spring:
+  mongodb:
+    database: connections_dev1
+    username: connections_dev1
+    authentication-database: connections_dev1

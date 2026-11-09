@@ -1,0 +1,20 @@
+# Used only at build time: by Spring AOT processing (mvn package) and by the JDK AOT-cache
+# training run in the Dockerfile. Neither can reach Config Server or Vault.
+#
+# Loaded with -Dspring.config.additional-location=classpath:/build-time.yml. This isn't a
+# profile file (application-build.yml) on purpose: the Config Server and Vault imports run in
+# the *initial* config-data phase, before profile-specific files are read, so a profile file
+# would come too late to switch fail-fast off.
+#
+# RULE: only values here. Never set *.enabled or anything a @Conditional reads. Doing so would
+# change the bean graph Spring AOT records, and every environment would inherit that graph.
+spring:
+  cloud:
+    config:
+      # '.invalid' never resolves, so a Config Server or Vault running locally is never picked up by the build.
+      uri: http://config-server.invalid:8888
+      fail-fast: false
+    vault:
+      uri: http://vault.invalid:8200
+      token: build-time-placeholder
+      fail-fast: false

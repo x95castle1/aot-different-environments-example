@@ -1,0 +1,39 @@
+# Example 04: a local registry plus three environments. Every environment runs the image by DIGEST
+# (IMAGE_REF=localhost:5001/one-image-app@sha256:...), exactly what was promoted, and gets its
+# settings from envs/<env>/: env vars (app.env) and a config directory mounted at /config.
+
+name: aot-04-one-image
+
+x-env: &env
+  image: ${IMAGE_REF:-localhost:5001/one-image-app:latest}
+  restart: "no"
+
+services:
+  registry:
+    image: registry:2
+    ports:
+      - "5001:5000"
+
+  app-dev1:
+    <<: *env
+    env_file: envs/dev1/app.env
+    volumes:
+      - ./envs/dev1/config:/config:ro
+    ports:
+      - "8401:8080"
+
+  app-qa1:
+    <<: *env
+    env_file: envs/qa1/app.env
+    volumes:
+      - ./envs/qa1/config:/config:ro
+    ports:
+      - "8402:8080"
+
+  app-prod1:
+    <<: *env
+    env_file: envs/prod1/app.env
+    volumes:
+      - ./envs/prod1/config:/config:ro
+    ports:
+      - "8403:8080"

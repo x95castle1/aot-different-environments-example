@@ -1,0 +1,4 @@
+# dev2 only (wins over application-dev.yml)
+app:
+  db-name: orders_dev2
+  message: "Hello from dev2 (overrides the dev tier)"

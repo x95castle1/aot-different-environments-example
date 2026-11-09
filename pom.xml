@@ -17,8 +17,13 @@
     <packaging>pom</packaging>
 
     <modules>
-        <module>demo-app</module>
-        <module>config-server</module>
+        <module>common</module>
+        <module>infra/config-server</module>
+        <module>examples/01-jvm-args/app</module>
+        <module>examples/02-dynamic-profiles/app</module>
+        <module>examples/03-startup-connections/app</module>
+        <module>examples/04-one-image/app</module>
+        <module>examples/05-all-together/app</module>
     </modules>
 
     <properties>
@@ -35,6 +40,11 @@
                 <version>${spring-cloud.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.example</groupId>
+                <artifactId>aot-common</artifactId>
+                <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.tngtech.archunit</groupId>

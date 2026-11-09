@@ -1,0 +1,4 @@
+# Every qa environment
+app:
+  message: "Hello from the qa tier"
+  notifier: email

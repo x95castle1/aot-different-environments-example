@@ -1,0 +1,15 @@
+# Bundled defaults. In this example the per-environment values are bundled profile files so it runs
+# without any infrastructure; in examples 03/05 the same kind of values come from Config Server.
+spring:
+  application:
+    name: profiles-app
+app:
+  message: "Hello from the defaults (no profile)"
+  db-name: orders
+  notifier: log
+  fancy-feature: false
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
