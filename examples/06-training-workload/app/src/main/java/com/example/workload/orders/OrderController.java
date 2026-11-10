@@ -7,6 +7,7 @@ import java.util.Map;
 import jakarta.validation.Valid;
 import org.bson.Document;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
@@ -31,10 +32,14 @@ class OrderController {
 
     private final OrderRepository orders;
     private final MongoTemplate mongo;
+    private final int maxPageSize;
 
-    OrderController(OrderRepository orders, MongoTemplate mongo) {
+    // app.orders.max-page-size differs per tier (Config Server: workload-app-dev.yml / workload-app-prod.yml)
+    OrderController(OrderRepository orders, MongoTemplate mongo,
+            @Value("${app.orders.max-page-size:100}") int maxPageSize) {
         this.orders = orders;
         this.mongo = mongo;
+        this.maxPageSize = maxPageSize;
     }
 
     @PostMapping
@@ -51,7 +56,7 @@ class OrderController {
 
     @GetMapping
     List<Order> byCustomer(@RequestParam String customer, @RequestParam(defaultValue = "20") int limit) {
-        return orders.findByCustomerOrderByCreatedAtDesc(customer, PageRequest.of(0, Math.min(limit, 100)));
+        return orders.findByCustomerOrderByCreatedAtDesc(customer, PageRequest.of(0, Math.min(limit, maxPageSize)));
     }
 
     @PutMapping("/{id}/status")

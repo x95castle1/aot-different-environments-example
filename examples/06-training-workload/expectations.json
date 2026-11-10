@@ -4,15 +4,17 @@
   "kind": "performance",
   "question": "A more complex application needs warming up with different pieces of code exercised. How do you train the AOT cache with a real workload when the real Config Server, Vault and Mongo can't be reached at build time, and what does it buy over training on startup alone?",
   "answer": {
-    "pass": "Three images of the same app are compared: UNTRAINED has no AOT cache; CONTEXT-TRAINED has a cache recorded in docker build by only starting the app (the Spring context comes up, then the JVM exits before any request), so it holds startup code only; WORKLOAD-TRAINED has a cache recorded in the pipeline while the app served real requests (training-pipeline.sh), so it also holds the request-path code. Result: Train in the pipeline, not in docker build: run the untrained image against throwaway Config Server, Vault and Mongo with fake data, drive a representative workload at it, stop it cleanly (the JVM writes the cache on exit), and add only that cache file on top of the exact untrained image. Startup stays about the same as a cache trained on startup alone, but the first requests no longer pay for loading and profiling the request path: the first request is about twice as fast and the first 300 requests are 10-20% faster, and far fewer classes are loaded from the jars at runtime.",
+    "pass": "Three images of the same app are compared: UNTRAINED has no AOT cache; CONTEXT-TRAINED has a cache recorded in docker build by only starting the app (the Spring context comes up, then the JVM exits before any request), so it holds startup code only; WORKLOAD-TRAINED has a cache recorded in the pipeline while the app served real requests (training-pipeline.sh), so it also holds the request-path code. Result: Train in the pipeline, not in docker build: run the untrained image against throwaway Config Server, Vault and Mongo with fake data, drive a representative workload at it, stop it cleanly (the JVM writes the cache on exit), and add only that cache file on top of the exact untrained image. Startup stays about the same as a cache trained on startup alone, but the first requests no longer pay for loading and profiling the request path: the first request is about twice as fast and the first 300 requests are 10-20% faster, and far fewer classes are loaded from the jars at runtime. The same workload-trained image then ran as dev1 (dev,dev1) and prod1 (prod,prod1), each with its own Config Server settings, Vault secret, database and JVM flags, and both used the AOT cache.",
     "fail": "Three images of the same app are compared: UNTRAINED has no AOT cache; CONTEXT-TRAINED has a cache recorded in docker build by only starting the app (the Spring context comes up, then the JVM exits before any request), so it holds startup code only; WORKLOAD-TRAINED has a cache recorded in the pipeline while the app served real requests (training-pipeline.sh), so it also holds the request-path code. Not as expected: at least one result differs from the known behaviour. See 'Unexpected results' for what differed and what to check.",
     "inconclusive": "Three images of the same app are compared: UNTRAINED has no AOT cache; CONTEXT-TRAINED has a cache recorded in docker build by only starting the app (the Spring context comes up, then the JVM exits before any request), so it holds startup code only; WORKLOAD-TRAINED has a cache recorded in the pipeline while the app served real requests (training-pipeline.sh), so it also holds the request-path code. The training worked, but some timings varied too much (or had too few runs) to judge. Close other workloads and rerun with more runs (make examples EX=06 RUNS=5)."
   },
   "tested": [
     "The training pipeline (training-pipeline.sh): build the untrained image, start throwaway Config Server / Vault / Mongo with fake data, run the untrained image with -XX:AOTCacheOutput, drive 3,000 mixed requests (8 in parallel), stop it with SIGTERM, and build the final image as the untrained image plus app.aot.",
-    "Three images of the same app, all deployed to the 'real' dev1 environment (shared infrastructure, its own credentials): no cache, a cache trained on startup only (in the build), a cache trained by the workload.",
+    "Two environments on the shared infrastructure: dev1 (profiles dev,dev1, its own JVM flags with a smaller heap) and prod1 (profiles prod,prod1, the image's default flags, i.e. the ones the caches were trained with). Each gets tier settings (workload-app-dev.yml / -prod.yml) and environment settings (workload-app-dev1.yml / -prod1.yml) from Config Server, and its own Mongo password from Vault.",
+    "Three images of the same app timed in dev1: no cache, a cache trained on startup only (in the build), a cache trained by the workload.",
     "Per image, RUNS fresh starts (round-robin, Mongo data reset before each): Spring's startup time, the latency of the first request, and the total time of the first 50 and the first 300 requests of the same fixed request mix.",
-    "Per image, one run with class-load logging across startup + 300 requests: how many classes came from the AOT cache and how many had to be loaded from the jars."
+    "Per image, one run with class-load logging across startup + 300 requests: how many classes came from the AOT cache and how many had to be loaded from the jars.",
+    "The workload-trained image (the one you'd ship) deployed to dev1 and to prod1: profiles, which Config Server files and Vault path it loaded, its database, a per-tier setting, its JVM flags, and whether it used the AOT cache."
   ],
   "noiseBand": 0.25,
   "checks": {
@@ -111,6 +113,94 @@
       "ifUnexpected": [
         "Does run-workload.sh exercise the same endpoints as the measurement? Compare the status counts in the training output.",
         "Read raw/context.classes.txt and raw/workload.classes.txt."
+      ]
+    },
+    "env.started": {
+      "group": "Environments (workload-trained image)",
+      "label": "started",
+      "expected": "yes",
+      "why": "The same image, started with this environment's env vars and Vault token.",
+      "ifUnexpected": [
+        "Read the environment's failed-start log in the evidence.",
+        "Was the environment bootstrapped? (.secrets/workload-app/<env>.env)"
+      ]
+    },
+    "env.profiles": {
+      "group": "Environments (workload-trained image)",
+      "label": "profiles",
+      "why": "APP_ENV + APP_ENV_INDEX become '<tier>,<tier><index>' at startup (example 02).",
+      "ifUnexpected": [
+        "Check start_app in demo.sh passes APP_ENV / APP_ENV_INDEX for this environment."
+      ]
+    },
+    "env.config-files": {
+      "group": "Environments (workload-trained image)",
+      "label": "Config Server files (most specific first)",
+      "why": "Config Server serves the files for the active profiles: the environment file (-dev1 / -prod1), then the tier file (-dev / -prod), then the shared file. Most specific wins.",
+      "ifUnexpected": [
+        "Check the files exist in infra/config-repo (workload-app.yml, -dev.yml, -dev1.yml, -prod.yml, -prod1.yml)."
+      ]
+    },
+    "env.tier-setting": {
+      "group": "Environments (workload-trained image)",
+      "label": "app.orders.max-page-size (tier setting)",
+      "why": "Set per tier by Config Server (50 in dev, 100 in prod) and used by the orders endpoint, not baked into the image.",
+      "ifUnexpected": [
+        "Check workload-app-dev.yml / workload-app-prod.yml in infra/config-repo."
+      ]
+    },
+    "env.mongo-db": {
+      "group": "Environments (workload-trained image)",
+      "label": "Mongo database (from Config Server)",
+      "why": "Each environment has its own database and user, from its environment file.",
+      "ifUnexpected": [
+        "Check workload-app-<env>.yml in infra/config-repo."
+      ]
+    },
+    "env.vault": {
+      "group": "Environments (workload-trained image)",
+      "label": "Vault path loaded",
+      "why": "Each environment's token can only read its own path; the Mongo password comes from there.",
+      "ifUnexpected": [
+        "Rerun the bootstrap: infra/bootstrap.sh workload-app dev1 prod1"
+      ]
+    },
+    "env.mongo-ping": {
+      "group": "Environments (workload-trained image)",
+      "label": "Mongo accepted the password from Vault",
+      "expected": "ok",
+      "why": "The password only exists in Vault and Mongo; the app read it at startup.",
+      "ifUnexpected": [
+        "Rerun the bootstrap: infra/bootstrap.sh workload-app dev1 prod1"
+      ]
+    },
+    "env.cache": {
+      "group": "Environments (workload-trained image)",
+      "label": "AOT cache used",
+      "expected": "USED",
+      "why": "dev1's flags (smaller heap) and prod1's flags (the training flags) are both compatible with the cache (example 01).",
+      "ifUnexpected": [
+        "Read the environment's classes file in the evidence.",
+        "Did someone give the environment an incompatible flag (e.g. ZGC on JDK 25)?"
+      ]
+    },
+    "env.jvm": {
+      "group": "Environments (workload-trained image)",
+      "label": "JVM flags",
+      "why": "Information: each environment's own flags; prod1 runs the image default."
+    },
+    "env.timing": {
+      "group": "Environments (workload-trained image)",
+      "label": "startup and first request",
+      "why": "Information: one start in this environment, with class-load logging on."
+    },
+    "env.same-image": {
+      "group": "Environments (workload-trained image)",
+      "label": "distinct images across dev1 and prod1",
+      "expected": "1",
+      "why": "One build for every environment (example 04): the environment only changes env vars and fetched settings.",
+      "ifUnexpected": [
+        "Check start_app runs workload-app:workload-trained for both environments."
       ]
     }
   },

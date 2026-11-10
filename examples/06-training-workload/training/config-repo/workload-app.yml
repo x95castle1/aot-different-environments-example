@@ -3,3 +3,7 @@ spring:
   mongodb:
     host: mongo
     port: 27017
+# The largest page size any environment uses, so training exercises the same paths prod does.
+app:
+  orders:
+    max-page-size: 100

@@ -26,6 +26,27 @@ Real environment systems are never contacted, and the training services are dele
 
 `context-trained` is what examples 01–05 use. `workload-trained` is what this example adds.
 
+## The environments: dev1 and prod1
+
+The images are timed in **dev1**. The image you'd ship, **workload-trained**, is then deployed unchanged to both
+**dev1** and **prod1**. Both run on the shared infrastructure, and an environment is nothing but env vars plus
+what it fetches at startup:
+
+| | dev1 | prod1 |
+|---|---|---|
+| Env vars → profiles | `APP_ENV=dev APP_ENV_INDEX=1` → `dev,dev1` | `APP_ENV=prod APP_ENV_INDEX=1` → `prod,prod1` |
+| Config Server: shared | [`workload-app.yml`](../../infra/config-repo/workload-app.yml) (Mongo host) | same |
+| Config Server: tier | [`workload-app-dev.yml`](../../infra/config-repo/workload-app-dev.yml) (`max-page-size: 50`) | [`workload-app-prod.yml`](../../infra/config-repo/workload-app-prod.yml) (`max-page-size: 100`) |
+| Config Server: environment | [`workload-app-dev1.yml`](../../infra/config-repo/workload-app-dev1.yml) (database/user `workload_dev1`) | [`workload-app-prod1.yml`](../../infra/config-repo/workload-app-prod1.yml) (database/user `workload_prod1`) |
+| Vault (Mongo password) | `secret/workload-app/dev1` (its own token) | `secret/workload-app/prod1` (its own token) |
+| Container memory | 768 MB | 1 GB |
+| JVM flags | `-XX:+UseG1GC -Xmx384m -XX:+ExitOnOutOfMemoryError` | image default = the flags the caches were trained with (`MaxRAMPercentage=75` → 768 MB heap) |
+
+There are no `application-dev1.yml` / `application-prod1.yml` files in the jar: the jar has only the shared
+`application.yml`. The per-environment files live in the Config Server's repo, so the image stays the same
+everywhere (example 04). The training stack has its own throwaway equivalent
+([`training/config-repo`](training/config-repo)), whose `training` profile is never a real environment.
+
 ## Run it
 
 ```bash
@@ -167,6 +188,17 @@ workload, stop, `docker cp`, build, push. Promote the final image by digest (exa
     so this row is information only, not pass/fail.
 - The cache grows from ~76 MB (startup only) to ~92 MB (with the request path and method profiles).
 
+And the image you'd ship, in each environment:
+
+```
+  env    profiles    Config Server files (most specific first)                        database        tier setting   heap      AOT cache
+  dev1   dev,dev1    workload-app-dev1.yml, workload-app-dev.yml, workload-app.yml    workload_dev1   max-page 50    384 MB    13639/13963
+  prod1  prod,prod1  workload-app-prod1.yml, workload-app-prod.yml, workload-app.yml  workload_prod1  max-page 100   768 MB    13639/13965
+```
+
+One image (the demo checks both run the same image ID), two environments: each loaded its own Config Server files,
+tier setting, database and Vault secret, ran with its own JVM flags, and used the same AOT cache.
+
 ## Reading the report
 
 `make demo` writes `reports/06-training-workload/<run>/report.md` (for people) and `results.json` (for scripts and
@@ -176,7 +208,9 @@ agents), plus the evidence in `raw/` (training log, class counts, final image hi
 - both caches are used;
 - startup is unchanged between the two caches;
 - the first request and the first 300 requests are faster with the workload cache (first 50 is shown, not judged);
-- fewer classes are loaded from the jars.
+- fewer classes are loaded from the jars;
+- the workload-trained image runs as dev1 and prod1 with each environment's own profiles, Config Server files, tier
+  setting, database and Vault path, uses the AOT cache in both, and both run the same image.
 
 What each outcome means: [docs/reading-reports.md](../../docs/reading-reports.md). The expectations and
 explanations come from [`expectations.json`](expectations.json).

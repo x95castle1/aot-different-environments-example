@@ -1,0 +1,6 @@
+# Example 06: prod1 only, where the workload-trained image is deployed. Password from Vault (secret/workload-app/prod1).
+spring:
+  mongodb:
+    database: workload_prod1
+    username: workload_prod1
+    authentication-database: workload_prod1
