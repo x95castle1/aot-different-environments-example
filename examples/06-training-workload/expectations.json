@@ -1,0 +1,215 @@
+{
+  "example": "06-training-workload",
+  "title": "06 · Training the AOT cache with a real workload",
+  "kind": "performance",
+  "question": "A more complex application needs warming up with different pieces of code exercised. How do you train the AOT cache with a real workload when the real Config Server, Vault and Mongo can't be reached at build time, and what does it buy over training on startup alone?",
+  "answer": {
+    "pass": "Three images of the same app are compared: UNTRAINED has no AOT cache; CONTEXT-TRAINED has a cache recorded in docker build by only starting the app (the Spring context comes up, then the JVM exits before any request), so it holds startup code only; WORKLOAD-TRAINED has a cache recorded in the pipeline while the app served real requests (train.sh), so it also holds the request-path code. Result: Train in the pipeline, not in docker build: run the untrained image against throwaway Config Server, Vault and Mongo with fake data, drive a representative workload at it, stop it cleanly (the JVM writes the cache on exit), and add only that cache file on top of the exact untrained image. Startup stays about the same as a cache trained on startup alone, but the first requests no longer pay for loading and profiling the request path: the first request is about twice as fast and the first 300 requests are 10-20% faster, and far fewer classes are loaded from the jars at runtime.",
+    "fail": "Three images of the same app are compared: UNTRAINED has no AOT cache; CONTEXT-TRAINED has a cache recorded in docker build by only starting the app (the Spring context comes up, then the JVM exits before any request), so it holds startup code only; WORKLOAD-TRAINED has a cache recorded in the pipeline while the app served real requests (train.sh), so it also holds the request-path code. Not as expected: at least one result differs from the known behaviour. See 'Unexpected results' for what differed and what to check.",
+    "inconclusive": "Three images of the same app are compared: UNTRAINED has no AOT cache; CONTEXT-TRAINED has a cache recorded in docker build by only starting the app (the Spring context comes up, then the JVM exits before any request), so it holds startup code only; WORKLOAD-TRAINED has a cache recorded in the pipeline while the app served real requests (train.sh), so it also holds the request-path code. The training worked, but some timings varied too much (or had too few runs) to judge. Close other workloads and rerun with more runs (make examples EX=06 RUNS=5)."
+  },
+  "tested": [
+    "The training pipeline (train.sh): build the untrained image, start throwaway Config Server / Vault / Mongo with fake data, run the untrained image with -XX:AOTCacheOutput, drive 3,000 mixed requests (8 in parallel), stop it with SIGTERM, and build the final image as the untrained image plus app.aot.",
+    "Three images of the same app, all deployed to the 'real' dev1 environment (shared infrastructure, its own credentials): no cache, a cache trained on startup only (in the build), a cache trained by the workload.",
+    "Per image, RUNS fresh starts (round-robin, Mongo data reset before each): Spring's startup time, the latency of the first request, and the total time of the first 50 and the first 300 requests of the same fixed request mix.",
+    "Per image, one run with class-load logging across startup + 300 requests: how many classes came from the AOT cache and how many had to be loaded from the jars."
+  ],
+  "noiseBand": 0.25,
+  "checks": {
+    "training.started": {
+      "group": "Training pipeline",
+      "label": "untrained image started against the throwaway services",
+      "expected": "yes",
+      "why": "The training stack has the same kinds of services as every environment, with fake data and credentials from infra/bootstrap.sh.",
+      "ifUnexpected": [
+        "Read raw/training.log.",
+        "Is demo-config-server:1.0.0 built? (make -C infra up builds it)"
+      ]
+    },
+    "training.workload": {
+      "group": "Training pipeline",
+      "label": "training workload",
+      "expected": "no server errors",
+      "why": "workload.sh drives the same request mix as prod traffic (creates, queries, aggregation, status updates, invalid requests).",
+      "ifUnexpected": [
+        "Read raw/training.log for exceptions during the workload.",
+        "Run ./workload.sh against a running instance to see the failing request."
+      ]
+    },
+    "training.cache-written": {
+      "group": "Training pipeline",
+      "label": "app.aot after docker stop",
+      "expected": "written on clean exit",
+      "why": "With -XX:AOTCacheOutput the JVM records what ran and, when it exits normally, assembles the cache in a child JVM. SIGTERM from docker stop gives Spring a graceful shutdown and the JVM a normal exit; the long stop timeout (-t 300) leaves time for the assembly.",
+      "ifUnexpected": [
+        "Was the container killed (exit 137) before the assembly finished? Increase the docker stop timeout.",
+        "Look for 'AOTCache creation is complete' in raw/training.log."
+      ]
+    },
+    "training.final-image": {
+      "group": "Training pipeline",
+      "label": "final image layers",
+      "expected": "untrained layers + 1 layer (app.aot)",
+      "why": "The cache is only valid for the exact JDK and /app files it was trained with, so the final image is FROM the untrained image and adds nothing but app.aot. No training data, secrets or tools end up in it.",
+      "ifUnexpected": [
+        "Check Dockerfile.trained: FROM ${BASE} + COPY app.aot only.",
+        "raw/final-image-history.txt shows the top layers."
+      ]
+    },
+    "training.cache-size": {
+      "group": "Training pipeline",
+      "label": "AOT cache size",
+      "why": "The workload-trained cache also holds the request-path classes and the method profiles recorded during the workload."
+    },
+    "cache.untrained": {
+      "group": "Classes from the AOT cache",
+      "label": "untrained: AOT cache",
+      "expected": "not used",
+      "outcome": "info",
+      "why": "Reference: this image has no cache file, so everything is loaded from the jars."
+    },
+    "cache.context": {
+      "group": "Classes from the AOT cache",
+      "label": "context-trained: AOT cache",
+      "expected": "USED",
+      "why": "The build-time cache covers the classes loaded during startup.",
+      "ifUnexpected": [
+        "Rebuild: make -C examples/06-training-workload image"
+      ]
+    },
+    "cache.workload": {
+      "group": "Classes from the AOT cache",
+      "label": "workload-trained: AOT cache",
+      "expected": "USED",
+      "why": "Trained with the same JDK and /app layers (the untrained image), so the cache is valid.",
+      "ifUnexpected": [
+        "Was the final image built FROM the same untrained image that was trained? Check training.final-image.",
+        "Read raw/workload.classes.txt."
+      ]
+    },
+    "outside.untrained": {
+      "group": "Classes from the AOT cache",
+      "label": "untrained: classes loaded from the jars",
+      "why": "Information: everything."
+    },
+    "outside.context": {
+      "group": "Classes from the AOT cache",
+      "label": "context-trained: classes loaded from the jars",
+      "why": "Information: the request path (validation, JSON, Mongo queries, error handling) wasn't seen during startup-only training."
+    },
+    "outside.workload": {
+      "group": "Classes from the AOT cache",
+      "label": "workload-trained: classes loaded from the jars",
+      "why": "Information: what the workload didn't exercise."
+    },
+    "fewer-outside": {
+      "group": "Classes from the AOT cache",
+      "label": "workload training leaves fewer classes to load from the jars",
+      "short": "fewer classes loaded at runtime",
+      "expected": "yes",
+      "why": "The workload exercised the request paths during training, so their classes are in the cache instead of being loaded on the first requests.",
+      "ifUnexpected": [
+        "Does workload.sh exercise the same endpoints as the measurement? Compare the status counts in the training output.",
+        "Read raw/context.classes.txt and raw/workload.classes.txt."
+      ]
+    }
+  },
+  "timings": {
+    "scenarios": {
+      "startup.untrained": {
+        "label": "untrained",
+        "metric": "startup time",
+        "expect": "reference",
+        "why": "Reference: no AOT cache."
+      },
+      "startup.context": {
+        "label": "context-trained",
+        "metric": "startup time",
+        "compareTo": "startup.untrained",
+        "expect": "improved",
+        "why": "The build-time cache covers startup, which is what it was trained on."
+      },
+      "startup.workload": {
+        "label": "workload-trained",
+        "metric": "startup time",
+        "compareTo": "startup.context",
+        "expect": "unchanged",
+        "why": "Startup is covered by both caches. The workload cache also preloads the request-path classes at startup, which costs a little time but not much."
+      },
+      "first.untrained": {
+        "label": "untrained",
+        "metric": "first request",
+        "expect": "reference",
+        "why": "Reference: no AOT cache."
+      },
+      "early.untrained": {
+        "label": "untrained",
+        "metric": "first 50 requests",
+        "expect": "reference",
+        "why": "Reference: no AOT cache."
+      },
+      "first.context": {
+        "label": "context-trained",
+        "metric": "first request",
+        "compareTo": "first.untrained",
+        "expect": "info",
+        "why": "Information: the startup-only cache doesn't cover the request path, so the first request still loads validation, JSON and Mongo classes."
+      },
+      "early.context": {
+        "label": "context-trained",
+        "metric": "first 50 requests",
+        "compareTo": "early.untrained",
+        "expect": "info",
+        "why": "Information: the startup-only cache leaves the request path to be loaded and profiled during these first requests."
+      },
+      "first.workload": {
+        "label": "workload-trained",
+        "metric": "first request",
+        "compareTo": "first.context",
+        "expect": "improved",
+        "why": "The request path's classes come from the cache, so the first request doesn't have to load them.",
+        "ifUnexpected": [
+          "Check fewer-outside: did the workload cache really cover the request path?",
+          "Rerun with more runs: RUNS=5."
+        ]
+      },
+      "early.workload": {
+        "label": "workload-trained",
+        "metric": "first 50 requests",
+        "compareTo": "early.context",
+        "expect": "info",
+        "why": "Information only: across runs this ranged from 10% to 1.7× faster. The reliable gain is ~30 ms on the very first request; spread over 50 requests (~0.2 s in total) that is within run-to-run noise, so it isn't judged."
+      },
+      "warmup.untrained": {
+        "label": "untrained",
+        "metric": "first 300 requests",
+        "expect": "reference",
+        "why": "Reference: no AOT cache."
+      },
+      "warmup.context": {
+        "label": "context-trained",
+        "metric": "first 300 requests",
+        "compareTo": "warmup.untrained",
+        "expect": "info",
+        "why": "Information: the startup-only cache helps little once requests arrive."
+      },
+      "warmup.workload": {
+        "label": "workload-trained",
+        "metric": "first 300 requests",
+        "compareTo": "warmup.context",
+        "expect": "improved",
+        "why": "Still faster over 300 requests, but the gain is diluted: it is concentrated in the first requests, and later requests run equally fast with either cache, so this is judged with a tighter ±10% band.",
+        "ifUnexpected": [
+          "Rerun with more runs: RUNS=5.",
+          "Is the measurement mix the same as the training mix? (workload.sh, same seed)"
+        ],
+        "band": 0.1
+      }
+    }
+  },
+  "reproduce": [
+    "make examples EX=06                                 # train + measure + report",
+    "make -C examples/06-training-workload train         # only the training pipeline -> workload-app:workload-trained",
+    "make -C examples/06-training-workload demo RUNS=5   # more starts per image"
+  ]
+}

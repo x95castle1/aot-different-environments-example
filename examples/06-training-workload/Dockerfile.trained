@@ -1,0 +1,13 @@
+# syntax=docker/dockerfile:1
+# Final image of the workload-training pipeline (train.sh):
+#   the EXACT untrained image that was trained (same JDK, same /app layers and file times)
+#   + the AOT cache that training run wrote. Nothing else: no training data, secrets or tools.
+# Build context: a directory containing only app.aot.
+ARG BASE
+FROM ${BASE}
+COPY app.aot /app/app.aot
+ARG REVISION=unknown
+ARG CREATED=unknown
+LABEL org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.created="${CREATED}" \
+      com.example.aot.training="workload (examples/06-training-workload/workload.sh)"

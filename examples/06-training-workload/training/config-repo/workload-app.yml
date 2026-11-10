@@ -1,0 +1,5 @@
+# Training stack only (throwaway services, fake data). Never a real environment.
+spring:
+  mongodb:
+    host: mongo
+    port: 27017

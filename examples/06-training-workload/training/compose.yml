@@ -1,0 +1,41 @@
+# Throwaway services for TRAINING the AOT cache with a real workload: same kinds of systems the app
+# connects to in every environment (Config Server, Vault, MongoDB), but disposable, with fake data,
+# and no host ports (nothing to clash with the shared infra). Removed after every training run.
+
+name: aot-06-training
+
+networks:
+  default:
+    name: aot-06-training
+
+services:
+  config-server:
+    image: demo-config-server:1.0.0
+    pull_policy: never
+    volumes:
+      - ./config-repo:/config-repo:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8888/actuator/health"]
+      interval: 2s
+      retries: 60
+
+  vault:
+    image: hashicorp/vault:2.1
+    cap_add: [IPC_LOCK]
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: root
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    healthcheck:
+      test: ["CMD", "vault", "status", "-address=http://127.0.0.1:8200"]
+      interval: 2s
+      retries: 60
+
+  mongo:
+    image: mongo:8.0
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 2s
+      retries: 60

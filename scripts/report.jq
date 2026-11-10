@@ -51,8 +51,10 @@ $exp[0] as $e
        elif $want == "unchanged" then (if $ratio > 1 + $band then "unexpected" else "unchanged" end)
        elif $want == "no-benefit-expected" then (if $ratio >= 1 - $band then "no-benefit-expected" else "unexpected" end)
        else "unexpected" end) as $outcome
-    | {kind: "timing", id: $s.id, subject: null, group: "Startup time",
-       label: "\(tlabel($s.id)): startup time", short: tlabel($s.id),
+    | ($rule.metric // null) as $metric
+    | {kind: "timing", id: $s.id, subject: null, group: ($metric // "Startup time"), metric: $metric,
+       label: (if $metric then "\(tlabel($s.id)) · \($metric)" else "\(tlabel($s.id)): startup time" end),
+       short: (if $metric then "\(tlabel($s.id)) · \($metric)" else tlabel($s.id) end),
        runs: $s.runs, min: ($s.min | r3), median: ($s.median | r3), max: ($s.max | r3), spread: ($s.spread | r2),
        compareTo: ($rule.compareTo // null),
        compareToLabel: (if $rule.compareTo then tlabel($rule.compareTo) else null end),

@@ -24,6 +24,7 @@
         <module>examples/03-startup-connections/app</module>
         <module>examples/04-one-image/app</module>
         <module>examples/05-all-together/app</module>
+        <module>examples/06-training-workload/app</module>
     </modules>
 
     <properties>

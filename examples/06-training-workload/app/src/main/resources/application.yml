@@ -1,0 +1,42 @@
+# Baked into the image and identical in every environment.
+# Anything environment-specific arrives at startup from:
+#   - APP_ENV / APP_ENV_INDEX         -> active profiles (EnvironmentProfilesPostProcessor)
+#   - Config Server                    -> workload-app-{profile}.yml (Mongo host/db/user)
+#   - Vault                            -> secret/workload-app/{profile} (Mongo password, API key)
+#   - env vars                         -> where those servers are and how to log in to them
+spring:
+  application:
+    name: workload-app
+  config:
+    import:
+      # 'optional:' only lets the build (no network) skip them. At runtime fail-fast=true below
+      # overrides it, so a missing Config Server or Vault stops the app at startup.
+      - "optional:configserver:"
+      - "optional:vault://"
+  cloud:
+    config:
+      uri: ${CONFIG_SERVER_URL:http://localhost:8888}
+      fail-fast: true
+    vault:
+      uri: ${VAULT_ADDR:http://localhost:8200}
+      authentication: TOKEN
+      token: ${VAULT_TOKEN:}
+      fail-fast: true
+      kv:
+        enabled: true
+        backend: secret
+        application-name: workload-app
+        # Read only secret/workload-app and secret/workload-app/{profile}, not the shared secret/application.
+        default-context: workload-app
+    # Refresh scope can't work with Spring AOT (the bean graph is fixed), so it has to be off.
+    refresh:
+      enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always

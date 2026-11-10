@@ -2,7 +2,7 @@
 include make/common.mk
 
 EXAMPLES := examples/01-jvm-args examples/02-dynamic-profiles examples/03-startup-connections \
-            examples/04-one-image examples/05-all-together
+            examples/04-one-image examples/05-all-together examples/06-training-workload
 
 ## ---------- examples
 
@@ -23,8 +23,8 @@ build: check-jdk ## Build every module, incl. Spring AOT processing (no services
 ## ---------- containers across all examples
 
 .PHONY: status
-status: ## Every running container from every example (all named aot-*)
-	@docker ps --filter 'name=^aot-' --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'
+status: ## What's running: which demo (and how far along), every aot-* container, the last report
+	@./scripts/status.sh
 
 .PHONY: logs
 logs: ## Pick any running container with fzf and follow its logs

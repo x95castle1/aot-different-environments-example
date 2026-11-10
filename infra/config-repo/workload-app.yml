@@ -1,0 +1,5 @@
+# Example 06: shared by every environment of workload-app.
+spring:
+  mongodb:
+    host: mongo
+    port: 27017

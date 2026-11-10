@@ -1,0 +1,6 @@
+# Example 06: dev1 only, where the trained images are measured. Password from Vault (secret/workload-app/dev1).
+spring:
+  mongodb:
+    database: workload_dev1
+    username: workload_dev1
+    authentication-database: workload_dev1

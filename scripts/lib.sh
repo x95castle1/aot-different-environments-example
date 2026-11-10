@@ -193,8 +193,10 @@ report_finish() {
 # print_timing_table <results.json>: the report's "Startup times" table, for the terminal
 print_timing_table() {
   jq -e 'any(.results[]; .kind == "timing")' "$1" >/dev/null || return 0
-  printf '\n%s== Startup times%s %s(median of each scenario'"'"'s runs; each row is compared with the scenario named under "compared with")%s\n' \
-    "$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET"
+  local heading="Startup times"
+  jq -e 'any(.results[]; .kind == "timing" and .metric != null)' "$1" >/dev/null && heading="Timings"
+  printf '\n%s== %s%s %s(median of each scenario'"'"'s runs; each row is compared with the scenario named under "compared with")%s\n' \
+    "$C_BOLD" "$heading" "$C_RESET" "$C_DIM" "$C_RESET"
   jq -r '
     def secs: if . == null then "-" else "\(.)s" end;
     [.results[] | select(.kind == "timing")] as $t

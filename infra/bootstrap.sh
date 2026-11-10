@@ -8,7 +8,8 @@
 #
 # Usage: infra/bootstrap.sh <app> <env> [<env> ...]     e.g. infra/bootstrap.sh demo-app dev1 qa1
 # Safe to re-run: passwords, API keys and tokens are rotated each time.
-# Expects the infrastructure to be up (make -C infra up).
+# Expects the infrastructure to be up (make -C infra up). INFRA_COMPOSE=<compose file> targets another
+# stack with the same services, e.g. example 06's throwaway training stack.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -16,7 +17,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP=$1; shift
 DB_PREFIX=$(sed -e 's/-app$//' -e 's/-/_/g' <<<"$APP")
 
-compose() { docker compose -f "$ROOT/infra/compose.yml" "$@"; }
+compose() { docker compose -f "${INFRA_COMPOSE:-$ROOT/infra/compose.yml}" "$@"; }
 vault() { compose exec -T -e VAULT_TOKEN=root -e VAULT_ADDR=http://127.0.0.1:8200 vault vault "$@"; }
 mongo_root() { compose exec -T mongo mongosh --quiet -u root -p example --authenticationDatabase admin "$@"; }
 random() { openssl rand -hex 16; }

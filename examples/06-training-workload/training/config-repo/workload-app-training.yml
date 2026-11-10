@@ -1,0 +1,6 @@
+# Training stack only. Password from the throwaway Vault (secret/workload-app/training).
+spring:
+  mongodb:
+    database: workload_training
+    username: workload_training
+    authentication-database: workload_training

@@ -1,14 +1,16 @@
 # Notes for agents running these examples
 
-This repo answers four questions about Spring AOT + the JDK AOT cache with one example each, plus a combined one (see
+This repo answers four questions about Spring AOT + the JDK AOT cache with one example each, a combined one, and one on
+training the cache with a real workload (see
 README.md). Each example measures, then writes a report that already interprets the results.
 
 ## Run
 
 ```bash
-make examples EX=01      # 01..05, or EX=all (no fzf picker when EX is given)
+make examples EX=01      # 01..06, or EX=all (no fzf picker when EX is given)
 make test                # unit + architecture tests (needs a local JDK 25)
-make status | stop       # containers across all examples / stop everything
+make status              # which demo is running (how far along), all containers, the last report
+make stop                # stop everything
 ```
 
 Needs Docker (running), `jq`, `curl` and `unzip`. Examples 03 and 05 start Config Server, Vault and MongoDB

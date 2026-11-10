@@ -93,7 +93,7 @@ def section($title; $items; $none):
      ($info[] | "- \(.label): \(.measured)" + (if .why != "" then " (\(.why))" else "" end)), ""
    else empty end),
   (if ($timings | length) > 0 then
-     "## Startup times", "",
+     (if any($timings[]; .metric != null) then "## Timings" else "## Startup times" end), "",
      "| Scenario | JDK AOT cache | Runs (s) | Median | Compared with | Change | Outcome |",
      "|---|---|---|---|---|---|---|",
      ($timings[] | "| \(.short | cell) | \(if .aotCache then "\(.aotCache.verdict) \(.aotCache.classes // "")" else "-" end) | \(.runs | map(if . == null then "fail" else tostring end) | join(", ")) | \(.median // "-")s | \((.compareToLabel // "-") | cell) | \(if .referenceMedian then "\(.change) (\(.median)s vs \(.referenceMedian)s)" else "-" end) | \(.outcome) |"),
