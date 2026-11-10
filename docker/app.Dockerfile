@@ -45,18 +45,31 @@ ENV JDK_JAVA_OPTIONS="-XX:+UseG1GC -XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemor
 
 USER app
 EXPOSE 8080
+# -XX:AOTCache points at the cache the next stage (or example 06's Dockerfile.trained) adds. In this
+# stage the file doesn't exist yet: the JVM warns and runs without a cache.
 ENTRYPOINT ["java", "-XX:AOTCache=/app/app.aot", "-Dspring.aot.enabled=true", "-jar", "/app/app.jar"]
 
 ############################
-# 3. Runtime image + AOT cache trained in the build (target "context-trained", the default).
+# 3. Runtime image + AOT cache trained in the build by only STARTING the app
+#    (target "context-trained", the default; examples 01-05 use this).
 ############################
 FROM untrained AS context-trained
 USER root
 
-# Training run. --network=none proves it needs no Config Server, Vault or Mongo.
-# spring.context.exit=onRefresh creates every bean, then exits before serving traffic. That trains
-# startup only; example 06 shows training with a real workload for request-path warm-up.
-# build-time.yml (only in apps that import remote config) turns off fail-fast for those imports.
+# Training run, step by step:
+#   - The JVM runs with the prod flags (JDK_JAVA_OPTIONS from the untrained stage), so the cache is
+#     recorded under prod settings. -XX:AOTCacheOutput records which classes get loaded and linked,
+#     plus method profiles.
+#   - -Dspring.aot.enabled=true: Spring runs its build-time (Spring AOT) code, as in every environment.
+#   - build-time.yml (only apps that import remote config have one) points Config Server and Vault at
+#     unreachable .invalid hosts with fail-fast off, so those imports are skipped. --network=none proves
+#     nothing here needs Config Server, Vault or Mongo.
+#   - Every bean is created (the Mongo client doesn't connect until first use).
+#   - -Dspring.context.exit=onRefresh: Spring exits as soon as the application context is ready, before
+#     the web server takes any request.
+#   - The JVM exits normally and JDK 25 assembles what it recorded into /app/app.aot.
+# Result: a cache of what runs during STARTUP only. Request-path code (validation, JSON, DB queries, error
+# handling) was never run, so it isn't in it; example 06 shows training with a real workload for that.
 RUN --network=none java \
       -XX:AOTCacheOutput=/app/app.aot \
       -Dspring.aot.enabled=true \

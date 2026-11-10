@@ -10,6 +10,17 @@
 #   6. Bake the cache into the final image    Dockerfile.trained: FROM workload-app:untrained + COPY app.aot
 #                                             -> workload-app:workload-trained
 #
+# The two trained images differ only in what the JVM was doing while it recorded the cache:
+#   context-trained   recorded in docker build (docker/app.Dockerfile, stage "context-trained") by only STARTING
+#                     the app: -Dspring.context.exit=onRefresh exits once the Spring context is ready, before any
+#                     request, so the cache holds startup code only. Needs no network or services.
+#   workload-trained  recorded here (steps 3-5) while the app SERVED the workload, so the cache also holds the
+#                     request path (validation, JSON, Mongo queries, error handling) and its method profiles.
+#
+# Step 6 builds on workload-app:untrained itself (not a fresh build) because the JVM only accepts a cache recorded
+# with the same JDK build and the same /app files (sizes and timestamps) it was trained with. The step checks the
+# final image is the untrained image's layers plus exactly one. In CI, pass the untrained image by digest.
+#
 # Real environment systems are never contacted; the training services are deleted afterwards.
 # When run from demo.sh, results go into its report (expect / save_evidence).
 set -euo pipefail

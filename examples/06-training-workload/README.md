@@ -34,26 +34,80 @@ make train             # only the pipeline: workload-app:untrained, :context-tra
 make workload URL=http://localhost:8602 N=300   # drive the request mix at a running instance
 ```
 
-## The Dockerfile(s)
+## How each image is built
 
-The app image comes from the shared [`docker/app.Dockerfile`](../../docker/app.Dockerfile), which has a stage
-without a cache:
+All three images share one build of the app. Two come straight from stages of the shared
+[`docker/app.Dockerfile`](../../docker/app.Dockerfile); the third is built on top of the first by
+[`Dockerfile.trained`](Dockerfile.trained) after the training run:
 
-```dockerfile
-FROM eclipse-temurin:25-jre AS untrained      # app + prod JDK_JAVA_OPTIONS + ENTRYPOINT, no app.aot
-...
-FROM untrained AS context-trained             # default target: + cache trained on startup in the build
-RUN --network=none java -XX:AOTCacheOutput=/app/app.aot ... -Dspring.context.exit=onRefresh -jar /app/app.jar
+```
+eclipse-temurin:25-jre                      ← JRE_IMAGE in docker/app.Dockerfile
+└─ workload-app:untrained                   ← stage "untrained": /app (app.jar + lib/), prod JDK_JAVA_OPTIONS,
+   │                                           user "app", ENTRYPOINT java -XX:AOTCache=/app/app.aot ...
+   ├─ workload-app:context-trained          ← stage "context-trained" (default target): + app.aot recorded in docker build
+   └─ workload-app:workload-trained         ← Dockerfile.trained: + app.aot recorded by train.sh (the only new layer)
 ```
 
-After training, [`Dockerfile.trained`](Dockerfile.trained) adds the cache on top of the **exact** image that was
-trained:
+### `untrained`: no cache
+
+`docker build --target untrained` stops at the stage that has the app, the prod JVM flags and the entrypoint, but
+no `app.aot`. The entrypoint still passes `-XX:AOTCache=/app/app.aot`; with the file missing, the JVM prints a
+warning and runs without a cache. This image is the baseline, and it is what `train.sh` trains.
+
+### `context-trained`: cache recorded in `docker build` by only starting the app
+
+This is the default target, so it's also how examples 01–05 get their cache. `train.sh` builds it in step 1 for
+comparison:
 
 ```dockerfile
-ARG BASE                       # workload-app:untrained (by digest in a real pipeline)
+FROM untrained AS context-trained
+USER root
+RUN --network=none java \
+      -XX:AOTCacheOutput=/app/app.aot \
+      -Dspring.aot.enabled=true \
+      -Dspring.config.additional-location=optional:classpath:/build-time.yml \
+      -Dspring.context.exit=onRefresh \
+      -jar /app/app.jar
+USER app
+```
+
+What happens in that `RUN`:
+
+1. **The JVM starts with the prod flags.** They come from the `JDK_JAVA_OPTIONS` the `untrained` stage set, so the
+   cache is recorded under prod settings. `-XX:AOTCacheOutput` tells it to record which classes it loads and
+   links, plus method profiles.
+2. **Spring starts with its build-time code** (`-Dspring.aot.enabled=true`), the same as in every environment.
+3. **The Config Server and Vault imports are skipped.** `build-time.yml` points them at unreachable `.invalid`
+   hosts with fail-fast off, and `--network=none` means nothing could connect anyway.
+4. **Every bean is created,** including the Mongo client, which doesn't connect until first use.
+5. **Spring stops right after startup** (`-Dspring.context.exit=onRefresh`): it exits as soon as the application
+   context is ready, before the web server takes any requests.
+6. **The JVM exits normally,** and JDK 25 assembles what it recorded into `/app/app.aot` (~76 MB), which stays in
+   the image.
+
+So the cache holds only what ran during startup: Spring, your beans, the Mongo and Vault clients, Tomcat setup. No
+request was ever served, so the request path is missing (validation, JSON, Mongo queries, error handling). Those
+are the ~2,150 classes still loaded from the jars on the first requests. The upside: it needs no network and no
+services, just `docker build`.
+
+### `workload-trained`: cache recorded by `train.sh` while the app served real requests
+
+[`train.sh`](train.sh) (next section) runs `workload-app:untrained` against throwaway services with
+`-XX:AOTCacheOutput=/tmp/app.aot`, sends it the workload, stops it cleanly, and copies the cache out. Then
+[`Dockerfile.trained`](Dockerfile.trained) adds the cache on top of the **exact** image that was trained:
+
+```dockerfile
+ARG BASE                       # workload-app:untrained, passed by train.sh (--build-arg BASE=...)
 FROM ${BASE}
 COPY app.aot /app/app.aot      # the only new layer: no training data, secrets or tools
 ```
+
+The base is the untrained image itself, not a fresh build, because the cache only works with the same JDK build
+and the same `/app` files (down to their sizes and timestamps) that it was trained with. Building on top of the
+trained image guarantees that, and `train.sh` checks it: the final image must be the untrained image's layers plus
+exactly one. In a real pipeline pass the untrained image **by digest**
+(`BASE=registry/workload-app@sha256:…`), so the final image can't be built on a different build from the one that
+was trained, even if a tag moves in between.
 
 ## The pipeline ([`train.sh`](train.sh)), step by step
 
