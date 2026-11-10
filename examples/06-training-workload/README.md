@@ -222,7 +222,8 @@ tier setting, database and Vault secret, ran with its own JVM flags, and used th
 
 `make demo` writes `reports/06-training-workload/<run>/report.md` (for people) and `results.json` (for scripts and
 agents), plus the evidence in `raw/` (training log, class counts, final image history). PASS means:
-- the training produced a cache on a clean exit;
+- the training pipeline ran to the end (if it stops early, the report shows how far it got and nothing else is
+  measured) and produced a cache on a clean exit;
 - the final image is the untrained image plus one layer;
 - both caches are used;
 - startup is unchanged between the two caches;

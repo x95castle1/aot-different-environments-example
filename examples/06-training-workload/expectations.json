@@ -63,6 +63,16 @@
       "label": "AOT cache size",
       "why": "The workload-trained cache also holds the request-path classes and the method profiles recorded during the workload."
     },
+    "training.pipeline": {
+      "group": "Training pipeline",
+      "label": "training pipeline ran to the end",
+      "expected": "yes",
+      "why": "Everything after training measures the three images training-pipeline.sh builds. If it stops early there is nothing to measure, so the demo reports what the pipeline recorded and stops.",
+      "ifUnexpected": [
+        "The training checks above show which step failed (raw/training.log has the trainer's log).",
+        "No other training check failed? Then a docker build or a docker compose command failed: rerun the pipeline on its own (make -C examples/06-training-workload train) to see its output."
+      ]
+    },
     "cache.untrained": {
       "group": "Classes from the AOT cache",
       "label": "untrained: AOT cache",
