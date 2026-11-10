@@ -29,8 +29,8 @@ Real environment systems are never contacted, and the training services are dele
 ## The environments: dev1 and prod1
 
 The images are timed in **dev1**. The image you'd ship, **workload-trained**, is then deployed unchanged to both
-**dev1** and **prod1**. Both run on the shared infrastructure, and an environment is nothing but env vars plus
-what it fetches at startup:
+**dev1** and **prod1**. Both are services in [`compose.yml`](compose.yml) on the shared infrastructure, and an
+environment is nothing but env vars plus what it fetches at startup:
 
 | | dev1 | prod1 |
 |---|---|---|
@@ -50,10 +50,19 @@ everywhere (example 04). The training stack has its own throwaway equivalent
 ## Run it
 
 ```bash
-make demo              # train with the workload, then measure all three images in dev1, write the report
-make train             # only the pipeline: workload-app:untrained, :context-trained, :workload-trained
+make demo              # everything: train, time all three images in dev1, run the trained image as dev1 + prod1, report
+make train             # only the training pipeline: workload-app:untrained, :context-trained, :workload-trained
+make envs              # run dev1 (:8602) and prod1 (:8603) from compose.yml; IMAGE=workload-app:<tag> picks the build
 make workload URL=http://localhost:8602 N=300   # drive the request mix at a running instance
+make stop              # stop the environments and remove the training stack
 ```
+
+What runs is described in two compose files; the scripts only do the steps in order, measure, and write the report:
+
+| File | What it runs |
+|---|---|
+| [`training/compose.yml`](training/compose.yml) | the **training stack**: throwaway Config Server, Vault and Mongo, plus `trainer` (the untrained image started with `-XX:AOTCacheOutput`, `stop_grace_period: 300s`) |
+| [`compose.yml`](compose.yml) | the **environments** `app-dev1` and `app-prod1` on the shared infrastructure: profiles, Vault token, JVM flags, memory, ports. `IMAGE` selects which of the three images runs |
 
 ## How each image is built
 
@@ -135,31 +144,41 @@ was trained, even if a tag moves in between.
 
 ## The pipeline ([`training-pipeline.sh`](training-pipeline.sh)), step by step
 
+These are the commands the script runs, in order; you can run them by hand from `examples/06-training-workload/`
+(the shared infrastructure isn't needed for training):
+
 ```bash
-# 1. image without a cache
-docker build -f examples/06-training-workload/Dockerfile --target untrained -t workload-app:untrained .
+# 1. the image without a cache (and the startup-only one, for comparison)
+docker build -f Dockerfile --target untrained -t workload-app:untrained ../..
+docker build -f Dockerfile                    -t workload-app:context-trained ../..
 
 # 2. throwaway services with fake data (no host ports; deleted at the end)
-docker compose -f training/compose.yml up -d --wait
-INFRA_COMPOSE=training/compose.yml infra/bootstrap.sh workload-app training
+docker compose -f training/compose.yml up -d --wait config-server vault mongo
+INFRA_COMPOSE=$PWD/training/compose.yml ../../infra/bootstrap.sh workload-app training
 
-# 3. run the untrained image against them, recording a cache (Spring AOT on, prod flags from the image)
-docker run -d --name train --network aot-06-training -e APP_ENV=training ... \
-  --entrypoint java workload-app:untrained \
-  -XX:AOTCacheOutput=/tmp/app.aot -Dspring.aot.enabled=true -jar /app/app.jar
+# 3. the trainer: the untrained image, recording a cache (Spring AOT on, prod flags from the image), on :8601
+docker compose -f training/compose.yml up -d trainer
 
 # 4. the workload: the same request mix the app sees in prod
 ./run-workload.sh http://localhost:8601 3000 8
 
-# 5. clean stop: SIGTERM -> graceful shutdown -> the JVM assembles the cache on exit (child JVM, a few seconds)
-docker stop -t 300 train && docker cp train:/tmp/app.aot out/app.aot
+# 5. clean stop: SIGTERM -> graceful shutdown -> the JVM assembles the cache on exit (a few seconds), then copy it out
+docker compose -f training/compose.yml stop trainer
+mkdir -p out && docker compose -f training/compose.yml cp trainer:/tmp/app.aot out/app.aot
+docker compose -f training/compose.yml down -v
 
 # 6. final image = untrained image + app.aot
 docker build -f Dockerfile.trained --build-arg BASE=workload-app:untrained -t workload-app:workload-trained out/
+rm -rf out      # *.aot is git-ignored anyway
+
+# then run it as the environments (needs the shared infrastructure)
+make -C ../../infra up && ../../infra/bootstrap.sh workload-app dev1 prod1
+docker compose up -d                       # dev1 on :8602, prod1 on :8603
+curl -s localhost:8603/info/runtime | jq   # prod1's profiles, Config Server files, database, JVM flags
 ```
 
-In CI these are the steps of one job: build, start the services (or use CI service containers), run, drive the
-workload, stop, `docker cp`, build, push. Promote the final image by digest (example 04).
+In CI these are the steps of one job: build, start the training stack (or use CI service containers), run the
+trainer, drive the workload, stop, copy the cache, build, push. Promote the final image by digest (example 04).
 
 ## What you'll see (Apple Silicon, Docker Desktop, JDK 25, 3 runs)
 
@@ -222,7 +241,7 @@ explanations come from [`expectations.json`](expectations.json).
 - **Make the workload look like prod traffic:** the main endpoints, serialization, DB queries, error paths,
   scheduled jobs. Paths the workload never touches stay uncached (the ~300 classes above).
 - **Stop cleanly with time to spare:** SIGTERM, not SIGKILL. JDK 25 assembles the cache after the app exits, so give
-  `docker stop` a long timeout.
+  the container a long stop timeout (`stop_grace_period: 300s` in [`training/compose.yml`](training/compose.yml)).
 - **Keep training out of the final image:** fake data, fake credentials, throwaway services. Only `app.aot` is
   copied.
 - **Training inside `docker build`** (with `RUN --network=none`) is fine when the hot paths don't need a database:

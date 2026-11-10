@@ -20,14 +20,10 @@ WARMUP_REQUESTS=${WARMUP_REQUESTS:-300}
 export RUNS
 IMAGES=(untrained context-trained workload-trained)
 SHORT=(untrained context workload)
-PORT=8602
-NAME=aot-06-measure-$$
-# dev1's own JVM flags (smaller heap); prod1 uses the image default, which is what the caches were trained with.
-# Each environment also has a container memory limit, as it would in a real platform.
-DEV1_FLAGS="-XX:+UseG1GC -Xmx384m -XX:+ExitOnOutOfMemoryError"
-DEV1_MEMORY=768m
-PROD1_MEMORY=1g
-cleanup() { docker rm -f "$NAME" >/dev/null 2>&1 || true; }
+# The environments (dev1, prod1) are defined in compose.yml: env vars, Vault token, JVM flags, memory, ports.
+ENVC=(docker compose -f compose.yml)
+NAME="" PORT=""
+cleanup() { "${ENVC[@]}" down --remove-orphans >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
 report_init 06-training-workload
@@ -44,8 +40,8 @@ note "                    before any request): startup code only"
 note "  workload-trained  cache recorded by training-pipeline.sh while the app served real requests: startup + request-path code"
 
 step "Environments: dev1 and prod1 on the shared infrastructure"
-note "  dev1   profiles dev,dev1    container memory ${DEV1_MEMORY}  JVM flags: ${DEV1_FLAGS}"
-note "  prod1  profiles prod,prod1  container memory ${PROD1_MEMORY}    JVM flags: image default (the flags the caches were trained with)"
+note "  Both defined in compose.yml (services app-dev1, app-prod1):"
+"${ENVC[@]}" config --format json | jq -r '.services | to_entries[] | "    \(.key)  profiles from APP_ENV=\(.value.environment.APP_ENV) APP_ENV_INDEX=\(.value.environment.APP_ENV_INDEX)  memory \((.value.mem_limit | tonumber) / 1048576 | floor) MB  JVM flags: \(.value.environment.JDK_JAVA_OPTIONS // "image default (the flags the caches were trained with)")"' 
 note "  Each gets its tier + environment settings from Config Server and its own Mongo password from Vault."
 make -s -C "$ROOT/infra" up >/dev/null 2>&1
 "$ROOT/infra/bootstrap.sh" workload-app dev1 prod1 | sed 's/^/  /'
@@ -56,19 +52,20 @@ reset_data() {
     --eval "db.getSiblingDB('workload_$1').orders.drop()" >/dev/null
 }
 
-# start_app <env> <image> [extra docker run options...]: starts the image as that environment, waits until healthy.
-# The environment is only env vars: APP_ENV + APP_ENV_INDEX (-> profiles), where Config Server and Vault are,
-# its Vault token, and its JVM flags. Everything else it fetches at startup.
+# start_app <env> <image> [JAVA_TOOL_OPTIONS]: docker compose up app-<env> with IMAGE=workload-app:<image>, waits
+# until healthy. Sets NAME (container id) and PORT. The environment is entirely what compose.yml says; the optional
+# JAVA_TOOL_OPTIONS is the demo's own instrumentation (class-load logging), never set otherwise.
 start_app() {
-  local env=$1 img=$2; shift 2
-  local opts=(-e "APP_ENV=${env%%[0-9]*}" -e "APP_ENV_INDEX=${env##*[a-z]}"
-              -e CONFIG_SERVER_URL=http://config-server:8888 -e VAULT_ADDR=http://vault:8200
-              --env-file "$ROOT/.secrets/workload-app/${env}.env")
-  if [[ "$env" == dev1 ]]; then opts+=(--memory "$DEV1_MEMORY" -e "JDK_JAVA_OPTIONS=${DEV1_FLAGS}")
-  else opts+=(--memory "$PROD1_MEMORY"); fi
+  local env=$1 img=$2 tool=${3:-}
   cleanup
-  docker run -d --name "$NAME" --network aot-infra -p "${PORT}:8080" "${opts[@]}" "$@" "workload-app:$img" >/dev/null
-  wait_for_http "http://localhost:${PORT}/actuator/health" 90
+  if [[ -n "$tool" ]]; then
+    JAVA_TOOL_OPTIONS="$tool" IMAGE="workload-app:$img" "${ENVC[@]}" up -d --force-recreate "app-$env" >/dev/null 2>&1
+  else
+    env -u JAVA_TOOL_OPTIONS IMAGE="workload-app:$img" "${ENVC[@]}" up -d --force-recreate "app-$env" >/dev/null 2>&1
+  fi
+  NAME=$("${ENVC[@]}" ps -q "app-$env")
+  PORT=$("${ENVC[@]}" port "app-$env" 8080 | sed 's/.*://')
+  [[ -n "$NAME" && -n "$PORT" ]] && wait_for_http "http://localhost:${PORT}/actuator/health" 90
 }
 
 declare_times() { eval "T_$1_$2=()"; }
@@ -112,7 +109,7 @@ declare -a OUTSIDE
 for i in "${!IMAGES[@]}"; do
   img=${IMAGES[$i]}; s=${SHORT[$i]}
   reset_data dev1
-  start_app dev1 "$img" -e "JAVA_TOOL_OPTIONS=-Xlog:disable -Xlog:class+load=info:file=/tmp/cl.log" || { fail "${img}: did not start"; continue; }
+  start_app dev1 "$img" "-Xlog:disable -Xlog:class+load=info:file=/tmp/cl.log" || { fail "${img}: did not start"; continue; }
   ./run-workload.sh "http://localhost:${PORT}" "$WARMUP_REQUESTS" 1 42 >/dev/null || true
   read -r cached total < <(docker exec "$NAME" sh -c 'echo "$(grep -c "shared objects file" /tmp/cl.log) $(grep -c "source:" /tmp/cl.log)"')
   outside=$(( total - cached ))
@@ -140,7 +137,7 @@ rows=(); env_images=()
 for i in "${!ENVS[@]}"; do
   env=${ENVS[$i]}
   reset_data "$env"
-  if ! start_app "$env" workload-trained -e "JAVA_TOOL_OPTIONS=-Xlog:disable -Xlog:class+load=info:file=/tmp/cl.log"; then
+  if ! start_app "$env" workload-trained "-Xlog:disable -Xlog:class+load=info:file=/tmp/cl.log"; then
     docker logs "$NAME" 2>&1 | save_evidence "${env}.failed-start.log"
     expect env.started "$env" no "" "${env}.failed-start.log"; continue
   fi

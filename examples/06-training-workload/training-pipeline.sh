@@ -3,10 +3,12 @@
 #
 #   1. Build the image WITHOUT a cache        docker build --target untrained        -> workload-app:untrained
 #      (and the usual build-time-trained one  docker build (default target)          -> workload-app:context-trained)
-#   2. Start throwaway services               training/compose.yml: Config Server, Vault, Mongo with FAKE data
-#   3. Run the untrained image against them   java -XX:AOTCacheOutput=/tmp/app.aot ... (prod flags, Spring AOT on)
+#   2. Start throwaway services               docker compose -f training/compose.yml up config-server vault mongo
+#   3. Run the untrained image against them   docker compose -f training/compose.yml up trainer
+#                                             (java -XX:AOTCacheOutput=/tmp/app.aot ..., prod flags, Spring AOT on)
 #   4. Drive the workload                     run-workload.sh (the same request mix the app sees in prod)
-#   5. Stop it cleanly                        docker stop -t 300: SIGTERM -> clean exit -> JVM writes app.aot
+#   5. Stop it cleanly                        docker compose ... stop trainer: SIGTERM -> clean exit -> JVM writes
+#                                             app.aot (stop_grace_period 300s), then docker compose ... cp it out
 #   6. Bake the cache into the final image    Dockerfile.trained: FROM workload-app:untrained + COPY app.aot
 #                                             -> workload-app:workload-trained
 #
@@ -21,7 +23,8 @@
 # with the same JDK build and the same /app files (sizes and timestamps) it was trained with. The step checks the
 # final image is the untrained image's layers plus exactly one. In CI, pass the untrained image by digest.
 #
-# Real environment systems are never contacted; the training services are deleted afterwards.
+# Everything that runs is described in training/compose.yml; this script only does the steps in order and checks
+# them. Real environment systems are never contacted; the training stack is deleted afterwards.
 # When run from demo.sh, results go into its report (expect / save_evidence).
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -33,10 +36,8 @@ expect_init 06-training-workload
 TRAIN_REQUESTS=${TRAIN_REQUESTS:-3000}
 TRAIN_PARALLEL=${TRAIN_PARALLEL:-8}
 TRAINING=(docker compose -f training/compose.yml)
-NAME=aot-06-train-$$
 OUT=$(mktemp -d)
 cleanup() {
-  docker rm -f "$NAME" >/dev/null 2>&1 || true
   "${TRAINING[@]}" down -v >/dev/null 2>&1 || true
   rm -rf "$OUT"
 }
@@ -54,20 +55,18 @@ note "  workload-app:untrained, workload-app:context-trained"
 docker image inspect demo-config-server:1.0.0 >/dev/null 2>&1 || make -s -C "$ROOT/infra" up >/dev/null
 
 step "2. Throwaway training services (fake data, deleted afterwards)"
-"${TRAINING[@]}" up -d --wait >/dev/null 2>&1
+"${TRAINING[@]}" up -d --wait config-server vault mongo >/dev/null 2>&1
+note "  docker compose -f training/compose.yml up -d --wait config-server vault mongo"
 INFRA_COMPOSE="$PWD/training/compose.yml" "$ROOT/infra/bootstrap.sh" workload-app training | sed 's/^/  /'
 
 step "3. Run the untrained image against them, recording a cache"
-docker run -d --name "$NAME" --network aot-06-training -p 8601:8080 \
-  -e APP_ENV=training -e CONFIG_SERVER_URL=http://config-server:8888 -e VAULT_ADDR=http://vault:8200 \
-  --env-file "$ROOT/.secrets/workload-app/training.env" \
-  --entrypoint java workload-app:untrained \
-  -XX:AOTCacheOutput=/tmp/app.aot -Dspring.aot.enabled=true -jar /app/app.jar >/dev/null
-note "  java -XX:AOTCacheOutput=/tmp/app.aot -Dspring.aot.enabled=true -jar /app/app.jar"
+"${TRAINING[@]}" up -d trainer >/dev/null 2>&1
+note "  docker compose -f training/compose.yml up -d trainer"
+note "  trainer: java -XX:AOTCacheOutput=/tmp/app.aot -Dspring.aot.enabled=true -jar /app/app.jar"
 note "  (prod JVM flags from the image's JDK_JAVA_OPTIONS: $(image_jvm_flags workload-app:untrained))"
 ok=yes; wait_for_http http://localhost:8601/actuator/health 90 || ok=no
 expect training.started "" "$ok"
-[[ "$ok" == yes ]] || { docker logs "$NAME" > "$OUT/training.log" 2>&1; save_evidence training.log < "$OUT/training.log"; finish; }
+[[ "$ok" == yes ]] || { "${TRAINING[@]}" logs --no-log-prefix trainer > "$OUT/training.log" 2>&1; save_evidence training.log < "$OUT/training.log"; finish; }
 
 step "4. Training workload: ${TRAIN_REQUESTS} requests, ${TRAIN_PARALLEL} in parallel"
 set +e
@@ -80,13 +79,15 @@ expect training.workload "" "$([[ $wcode -eq 0 ]] && echo "no server errors" || 
 
 step "5. Stop cleanly: the JVM writes the cache on exit"
 start=$(date +%s)
-docker stop -t 300 "$NAME" >/dev/null
+"${TRAINING[@]}" stop trainer >/dev/null 2>&1      # waits up to stop_grace_period (300s) for the cache
+note "  docker compose -f training/compose.yml stop trainer"
 # (logs go to a file first: "docker logs | grep -q" can fail under pipefail when grep stops reading early)
-docker logs "$NAME" > "$OUT/training.log" 2>&1
+"${TRAINING[@]}" logs --no-log-prefix trainer > "$OUT/training.log" 2>&1
 save_evidence training.log < "$OUT/training.log"
 grep -E "AOTConfiguration recorded|assemble AOT cache|AOTCache creation is complete" "$OUT/training.log" | sed 's/^/    /'
 note "  stop + cache assembly took $(( $(date +%s) - start ))s"
-docker cp "$NAME:/tmp/app.aot" "$OUT/app.aot" >/dev/null 2>&1 || true
+"${TRAINING[@]}" cp trainer:/tmp/app.aot "$OUT/app.aot" >/dev/null 2>&1 || true
+note "  docker compose -f training/compose.yml cp trainer:/tmp/app.aot <dir>/app.aot"
 written=$([[ -s "$OUT/app.aot" ]] && grep -q "AOTCache creation is complete" "$OUT/training.log" && echo "written on clean exit" || echo "missing")
 expect training.cache-written "" "$written" "" training.log
 [[ "$written" == "written on clean exit" ]] || finish

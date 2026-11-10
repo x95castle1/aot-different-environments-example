@@ -1,6 +1,20 @@
-# Throwaway services for TRAINING the AOT cache with a real workload: same kinds of systems the app
-# connects to in every environment (Config Server, Vault, MongoDB), but disposable, with fake data,
-# and no host ports (nothing to clash with the shared infra). Removed after every training run.
+# The TRAINING stack: throwaway services + the app whose AOT cache is being recorded.
+#
+#   config-server, vault, mongo   the same kinds of systems the app connects to in every environment, but
+#                                 disposable, with fake data, and no host ports (nothing clashes with the shared
+#                                 infra). Seeded by infra/bootstrap.sh; deleted after every training run.
+#   trainer                       workload-app:untrained, started with -XX:AOTCacheOutput so the JVM records
+#                                 what runs while run-workload.sh sends it requests. Stopping it cleanly
+#                                 (docker compose stop trainer) makes the JVM write /tmp/app.aot on exit.
+#
+# By hand (from examples/06-training-workload/):
+#   docker compose -f training/compose.yml up -d --wait config-server vault mongo
+#   INFRA_COMPOSE=$PWD/training/compose.yml ../../infra/bootstrap.sh workload-app training
+#   docker compose -f training/compose.yml up -d trainer
+#   ./run-workload.sh http://localhost:8601 3000 8
+#   docker compose -f training/compose.yml stop trainer
+#   docker compose -f training/compose.yml cp trainer:/tmp/app.aot out/app.aot
+#   docker compose -f training/compose.yml down -v
 
 name: aot-06-training
 
@@ -39,3 +53,26 @@ services:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 2s
       retries: 60
+
+  trainer:
+    image: workload-app:untrained
+    pull_policy: never
+    depends_on:
+      config-server: { condition: service_healthy }
+      vault: { condition: service_healthy }
+      mongo: { condition: service_healthy }
+    # The image's ENTRYPOINT, with -XX:AOTCacheOutput instead of -XX:AOTCache: record a cache instead of using one.
+    # Spring AOT on, and the prod JVM flags come from the image's JDK_JAVA_OPTIONS, exactly as in prod.
+    entrypoint: ["java", "-XX:AOTCacheOutput=/tmp/app.aot", "-Dspring.aot.enabled=true", "-jar", "/app/app.jar"]
+    environment:
+      APP_ENV: training                          # -> profile "training": training/config-repo/workload-app-training.yml
+      CONFIG_SERVER_URL: http://config-server:8888
+      VAULT_ADDR: http://vault:8200
+    env_file:
+      - path: ../../../.secrets/workload-app/training.env   # VAULT_TOKEN, written by infra/bootstrap.sh
+        required: false
+    # On stop: SIGTERM -> Spring's graceful shutdown -> normal JVM exit -> JDK 25 assembles the cache in a child
+    # JVM (a few seconds). The long grace period makes sure it's never killed before the cache is written.
+    stop_grace_period: 300s
+    ports:
+      - "8601:8080"

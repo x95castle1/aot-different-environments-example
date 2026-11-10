@@ -40,11 +40,11 @@
     },
     "training.cache-written": {
       "group": "Training pipeline",
-      "label": "app.aot after docker stop",
+      "label": "app.aot after a clean stop",
       "expected": "written on clean exit",
-      "why": "With -XX:AOTCacheOutput the JVM records what ran and, when it exits normally, assembles the cache in a child JVM. SIGTERM from docker stop gives Spring a graceful shutdown and the JVM a normal exit; the long stop timeout (-t 300) leaves time for the assembly.",
+      "why": "With -XX:AOTCacheOutput the JVM records what ran and, when it exits normally, assembles the cache in a child JVM. 'docker compose stop trainer' sends SIGTERM: Spring shuts down gracefully and the JVM exits normally; the trainer's stop_grace_period (300s) leaves time for the assembly.",
       "ifUnexpected": [
-        "Was the container killed (exit 137) before the assembly finished? Increase the docker stop timeout.",
+        "Was the trainer killed (exit 137) before the assembly finished? Raise stop_grace_period in training/compose.yml.",
         "Look for 'AOTCache creation is complete' in raw/training.log."
       ]
     },

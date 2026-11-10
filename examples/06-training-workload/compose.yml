@@ -1,0 +1,63 @@
+# The ENVIRONMENTS: dev1 and prod1 running workload-app on the shared infrastructure
+# (infra/compose.yml: Config Server, Vault, Mongo on the aot-infra network).
+#
+# An environment is nothing but these env vars plus what it fetches at startup:
+#   APP_ENV + APP_ENV_INDEX -> profiles (dev,dev1 / prod,prod1) -> Config Server files workload-app-<tier>.yml and
+#   workload-app-<env>.yml; its own Vault token (written by infra/bootstrap.sh) -> its Mongo password; its JVM flags.
+#
+# IMAGE picks which build runs (default: the workload-trained image you'd ship). demo.sh uses it to time all three:
+#   IMAGE=workload-app:untrained | workload-app:context-trained | workload-app:workload-trained
+#
+# By hand (from examples/06-training-workload/, after `make -C ../../infra up` and
+#          `../../infra/bootstrap.sh workload-app dev1 prod1`):
+#   docker compose up -d                 # both environments: dev1 on :8602, prod1 on :8603
+#   curl -s localhost:8603/info/runtime | jq
+#   docker compose down
+
+name: aot-06-environments
+
+networks:
+  default:
+    name: aot-infra
+    external: true
+
+x-app: &app
+  image: ${IMAGE:-workload-app:workload-trained}
+  pull_policy: never
+  restart: "no"
+
+x-app-env: &app-env
+  CONFIG_SERVER_URL: http://config-server:8888
+  VAULT_ADDR: http://vault:8200
+  # Not set normally; demo.sh sets it for the run that counts classes loaded from the AOT cache vs the jars.
+  JAVA_TOOL_OPTIONS:
+
+services:
+  app-dev1:
+    <<: *app
+    environment:
+      <<: *app-env
+      APP_ENV: dev
+      APP_ENV_INDEX: "1"
+      # dev1's own JVM flags: a smaller heap. Compatible with the cache, which was trained with the prod flags.
+      JDK_JAVA_OPTIONS: -XX:+UseG1GC -Xmx384m -XX:+ExitOnOutOfMemoryError
+    env_file:
+      - path: ../../.secrets/workload-app/dev1.env     # VAULT_TOKEN: can read only secret/workload-app/dev1
+        required: false
+    mem_limit: 768m
+    ports:
+      - "8602:8080"
+
+  app-prod1:
+    <<: *app
+    environment:
+      <<: *app-env
+      APP_ENV: prod
+      APP_ENV_INDEX: "1"
+      # No JDK_JAVA_OPTIONS: prod runs with the image default, the flags the AOT caches were trained with.
+    env_file:
+      - path: ../../.secrets/workload-app/prod1.env    # VAULT_TOKEN: can read only secret/workload-app/prod1
+        required: false
+    mem_limit: 1g
+    ports:
+      - "8603:8080"
