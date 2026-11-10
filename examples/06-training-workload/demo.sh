@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Example 06: train the AOT cache with a real workload (train.sh), then measure what it buys.
+# Example 06: train the AOT cache with a real workload (training-pipeline.sh), then measure what it buys.
 #
 # Three images of the same app, all measured in the "real" dev1 environment (shared infra, its own
 # credentials), never in the training stack:
 #   untrained          no AOT cache at all
 #   context-trained    cache trained in the build on startup only (-Dspring.context.exit=onRefresh)
-#   workload-trained   cache trained by train.sh with the request mix in workload.sh
+#   workload-trained   cache trained by training-pipeline.sh with the request mix in run-workload.sh
 # Per image, RUNS fresh starts (round-robin, data reset before each): startup time, first request,
 # and the first WARMUP_REQUESTS requests (warm-up). Plus one run counting classes from the cache.
 # Expected results: expectations.json. Writes reports/06-training-workload/<run>/report.md.
@@ -28,7 +28,7 @@ trap cleanup EXIT
 report_init 06-training-workload
 
 # ---------------------------------------------------------------------------------------------------- training
-./train.sh
+./training-pipeline.sh
 for img in "${IMAGES[@]}"; do report_image "workload-app:$img"; done
 
 # ---------------------------------------------------------------------------------------------------- measure
@@ -36,7 +36,7 @@ step "The three images"
 note "  untrained         no AOT cache at all"
 note "  context-trained   cache recorded in docker build by only starting the app (Spring context up, JVM exits"
 note "                    before any request): startup code only"
-note "  workload-trained  cache recorded by train.sh while the app served real requests: startup + request-path code"
+note "  workload-trained  cache recorded by training-pipeline.sh while the app served real requests: startup + request-path code"
 
 step "Measurement environment: dev1 on the shared infrastructure"
 make -s -C "$ROOT/infra" up >/dev/null 2>&1
@@ -61,7 +61,7 @@ declare_times() { eval "T_$1_$2=()"; }
 for s in "${SHORT[@]}"; do for m in startup first early warmup; do declare_times "$m" "$s"; done; done
 
 note "  ${RUNS} fresh starts per image, round-robin; first request = first POST /orders after ready;"
-note "  warm-up = total time of the first 50 and the first ${WARMUP_REQUESTS} requests of workload.sh (sequential, same mix every time)"
+note "  warm-up = total time of the first 50 and the first ${WARMUP_REQUESTS} requests of run-workload.sh (sequential, same mix every time)"
 for run in $(seq 1 "$RUNS"); do
   step "Round ${run}/${RUNS}"
   for i in "${!IMAGES[@]}"; do
@@ -73,7 +73,7 @@ for run in $(seq 1 "$RUNS"); do
       fail "${img}: did not start"; continue
     fi
     st=$(started_in "$NAME")
-    out=$(./workload.sh "http://localhost:${PORT}" "$WARMUP_REQUESTS" 1 42 || echo "FAIL")
+    out=$(./run-workload.sh "http://localhost:${PORT}" "$WARMUP_REQUESTS" 1 42 || echo "FAIL")
     first=$(head -1 <<<"$out" | awk '{print $2}')
     early=$(awk '$2 ~ /^[0-9.]+$/ && NR <= 50 {t += $2} END {printf "%.3f", t}' <<<"$out")
     total=$(awk '$2 ~ /^[0-9.]+$/ {t += $2} END {printf "%.3f", t}' <<<"$out")
@@ -98,7 +98,7 @@ for i in "${!IMAGES[@]}"; do
   img=${IMAGES[$i]}; s=${SHORT[$i]}
   reset_data
   start_app "$img" -e "JAVA_TOOL_OPTIONS=-Xlog:disable -Xlog:class+load=info:file=/tmp/cl.log" || { fail "${img}: did not start"; continue; }
-  ./workload.sh "http://localhost:${PORT}" "$WARMUP_REQUESTS" 1 42 >/dev/null || true
+  ./run-workload.sh "http://localhost:${PORT}" "$WARMUP_REQUESTS" 1 42 >/dev/null || true
   read -r cached total < <(docker exec "$NAME" sh -c 'echo "$(grep -c "shared objects file" /tmp/cl.log) $(grep -c "source:" /tmp/cl.log)"')
   outside=$(( total - cached ))
   OUTSIDE[$i]=$outside

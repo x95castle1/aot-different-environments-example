@@ -4,12 +4,12 @@
   "kind": "performance",
   "question": "A more complex application needs warming up with different pieces of code exercised. How do you train the AOT cache with a real workload when the real Config Server, Vault and Mongo can't be reached at build time, and what does it buy over training on startup alone?",
   "answer": {
-    "pass": "Three images of the same app are compared: UNTRAINED has no AOT cache; CONTEXT-TRAINED has a cache recorded in docker build by only starting the app (the Spring context comes up, then the JVM exits before any request), so it holds startup code only; WORKLOAD-TRAINED has a cache recorded in the pipeline while the app served real requests (train.sh), so it also holds the request-path code. Result: Train in the pipeline, not in docker build: run the untrained image against throwaway Config Server, Vault and Mongo with fake data, drive a representative workload at it, stop it cleanly (the JVM writes the cache on exit), and add only that cache file on top of the exact untrained image. Startup stays about the same as a cache trained on startup alone, but the first requests no longer pay for loading and profiling the request path: the first request is about twice as fast and the first 300 requests are 10-20% faster, and far fewer classes are loaded from the jars at runtime.",
-    "fail": "Three images of the same app are compared: UNTRAINED has no AOT cache; CONTEXT-TRAINED has a cache recorded in docker build by only starting the app (the Spring context comes up, then the JVM exits before any request), so it holds startup code only; WORKLOAD-TRAINED has a cache recorded in the pipeline while the app served real requests (train.sh), so it also holds the request-path code. Not as expected: at least one result differs from the known behaviour. See 'Unexpected results' for what differed and what to check.",
-    "inconclusive": "Three images of the same app are compared: UNTRAINED has no AOT cache; CONTEXT-TRAINED has a cache recorded in docker build by only starting the app (the Spring context comes up, then the JVM exits before any request), so it holds startup code only; WORKLOAD-TRAINED has a cache recorded in the pipeline while the app served real requests (train.sh), so it also holds the request-path code. The training worked, but some timings varied too much (or had too few runs) to judge. Close other workloads and rerun with more runs (make examples EX=06 RUNS=5)."
+    "pass": "Three images of the same app are compared: UNTRAINED has no AOT cache; CONTEXT-TRAINED has a cache recorded in docker build by only starting the app (the Spring context comes up, then the JVM exits before any request), so it holds startup code only; WORKLOAD-TRAINED has a cache recorded in the pipeline while the app served real requests (training-pipeline.sh), so it also holds the request-path code. Result: Train in the pipeline, not in docker build: run the untrained image against throwaway Config Server, Vault and Mongo with fake data, drive a representative workload at it, stop it cleanly (the JVM writes the cache on exit), and add only that cache file on top of the exact untrained image. Startup stays about the same as a cache trained on startup alone, but the first requests no longer pay for loading and profiling the request path: the first request is about twice as fast and the first 300 requests are 10-20% faster, and far fewer classes are loaded from the jars at runtime.",
+    "fail": "Three images of the same app are compared: UNTRAINED has no AOT cache; CONTEXT-TRAINED has a cache recorded in docker build by only starting the app (the Spring context comes up, then the JVM exits before any request), so it holds startup code only; WORKLOAD-TRAINED has a cache recorded in the pipeline while the app served real requests (training-pipeline.sh), so it also holds the request-path code. Not as expected: at least one result differs from the known behaviour. See 'Unexpected results' for what differed and what to check.",
+    "inconclusive": "Three images of the same app are compared: UNTRAINED has no AOT cache; CONTEXT-TRAINED has a cache recorded in docker build by only starting the app (the Spring context comes up, then the JVM exits before any request), so it holds startup code only; WORKLOAD-TRAINED has a cache recorded in the pipeline while the app served real requests (training-pipeline.sh), so it also holds the request-path code. The training worked, but some timings varied too much (or had too few runs) to judge. Close other workloads and rerun with more runs (make examples EX=06 RUNS=5)."
   },
   "tested": [
-    "The training pipeline (train.sh): build the untrained image, start throwaway Config Server / Vault / Mongo with fake data, run the untrained image with -XX:AOTCacheOutput, drive 3,000 mixed requests (8 in parallel), stop it with SIGTERM, and build the final image as the untrained image plus app.aot.",
+    "The training pipeline (training-pipeline.sh): build the untrained image, start throwaway Config Server / Vault / Mongo with fake data, run the untrained image with -XX:AOTCacheOutput, drive 3,000 mixed requests (8 in parallel), stop it with SIGTERM, and build the final image as the untrained image plus app.aot.",
     "Three images of the same app, all deployed to the 'real' dev1 environment (shared infrastructure, its own credentials): no cache, a cache trained on startup only (in the build), a cache trained by the workload.",
     "Per image, RUNS fresh starts (round-robin, Mongo data reset before each): Spring's startup time, the latency of the first request, and the total time of the first 50 and the first 300 requests of the same fixed request mix.",
     "Per image, one run with class-load logging across startup + 300 requests: how many classes came from the AOT cache and how many had to be loaded from the jars."
@@ -30,10 +30,10 @@
       "group": "Training pipeline",
       "label": "training workload",
       "expected": "no server errors",
-      "why": "workload.sh drives the same request mix as prod traffic (creates, queries, aggregation, status updates, invalid requests).",
+      "why": "run-workload.sh drives the same request mix as prod traffic (creates, queries, aggregation, status updates, invalid requests).",
       "ifUnexpected": [
         "Read raw/training.log for exceptions during the workload.",
-        "Run ./workload.sh against a running instance to see the failing request."
+        "Run ./run-workload.sh against a running instance to see the failing request."
       ]
     },
     "training.cache-written": {
@@ -109,7 +109,7 @@
       "expected": "yes",
       "why": "The workload exercised the request paths during training, so their classes are in the cache instead of being loaded on the first requests.",
       "ifUnexpected": [
-        "Does workload.sh exercise the same endpoints as the measurement? Compare the status counts in the training output.",
+        "Does run-workload.sh exercise the same endpoints as the measurement? Compare the status counts in the training output.",
         "Read raw/context.classes.txt and raw/workload.classes.txt."
       ]
     }
@@ -201,7 +201,7 @@
         "why": "Still faster over 300 requests, but the gain is diluted: it is concentrated in the first requests, and later requests run equally fast with either cache, so this is judged with a tighter ±10% band.",
         "ifUnexpected": [
           "Rerun with more runs: RUNS=5.",
-          "Is the measurement mix the same as the training mix? (workload.sh, same seed)"
+          "Is the measurement mix the same as the training mix? (run-workload.sh, same seed)"
         ],
         "band": 0.1
       }

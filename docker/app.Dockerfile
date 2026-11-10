@@ -30,34 +30,22 @@ RUN java -Djarmode=tools -jar "${MODULE}/target/${APP}.jar" extract \
       --destination /extracted --application-filename app.jar
 
 ############################
-# 2. Runtime image WITHOUT an AOT cache (target "untrained").
-#    Example 06 trains this exact image with a real workload outside the build, then adds app.aot on top.
+# 2. Runtime image + AOT cache trained in the build by only STARTING the app.
+#    (Example 06 has its own Dockerfile that splits this into an untrained stage, which it trains with a real
+#    workload, and this startup-only training for comparison.)
 ############################
-FROM ${JRE_IMAGE} AS untrained
+FROM ${JRE_IMAGE}
 WORKDIR /app
 RUN groupadd --system app && useradd --system --gid app --home /app app
 COPY --from=build /extracted/ /app/
 
-# The PROD JVM flags, the one place they're defined. The AOT cache is trained with exactly these, and
-# prod runs with them by not overriding JDK_JAVA_OPTIONS. Other environments override it; if their
-# flags are incompatible with the cache (e.g. ZGC on JDK 25) the JVM warns and starts without it.
+# The PROD JVM flags, the one place they're defined. The AOT cache below is trained with exactly these, and
+# prod runs with them by not overriding JDK_JAVA_OPTIONS. Other environments override it; if their flags are
+# incompatible with the cache (e.g. ZGC on JDK 25) the JVM warns and starts without it.
 ENV JDK_JAVA_OPTIONS="-XX:+UseG1GC -XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
 
-USER app
-EXPOSE 8080
-# -XX:AOTCache points at the cache the next stage (or example 06's Dockerfile.trained) adds. In this
-# stage the file doesn't exist yet: the JVM warns and runs without a cache.
-ENTRYPOINT ["java", "-XX:AOTCache=/app/app.aot", "-Dspring.aot.enabled=true", "-jar", "/app/app.jar"]
-
-############################
-# 3. Runtime image + AOT cache trained in the build by only STARTING the app
-#    (target "context-trained", the default; examples 01-05 use this).
-############################
-FROM untrained AS context-trained
-USER root
-
 # Training run, step by step:
-#   - The JVM runs with the prod flags (JDK_JAVA_OPTIONS from the untrained stage), so the cache is
+#   - The JVM runs with the prod flags (JDK_JAVA_OPTIONS above), so the cache is
 #     recorded under prod settings. -XX:AOTCacheOutput records which classes get loaded and linked,
 #     plus method profiles.
 #   - -Dspring.aot.enabled=true: Spring runs its build-time (Spring AOT) code, as in every environment.
@@ -79,6 +67,8 @@ RUN --network=none java \
  && ls -lh /app/app.aot
 
 USER app
+EXPOSE 8080
+ENTRYPOINT ["java", "-XX:AOTCache=/app/app.aot", "-Dspring.aot.enabled=true", "-jar", "/app/app.jar"]
 
 # Traceability for promotion (example 04). Last, so they don't invalidate the layers above.
 ARG REVISION=unknown

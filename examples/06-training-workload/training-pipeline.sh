@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# train.sh: the "train the AOT cache with a real workload" pipeline, as a CI job would run it.
+# training-pipeline.sh: the "train the AOT cache with a real workload" pipeline, as a CI job would run it.
 #
 #   1. Build the image WITHOUT a cache        docker build --target untrained        -> workload-app:untrained
 #      (and the usual build-time-trained one  docker build (default target)          -> workload-app:context-trained)
 #   2. Start throwaway services               training/compose.yml: Config Server, Vault, Mongo with FAKE data
 #   3. Run the untrained image against them   java -XX:AOTCacheOutput=/tmp/app.aot ... (prod flags, Spring AOT on)
-#   4. Drive the workload                     workload.sh (the same request mix the app sees in prod)
+#   4. Drive the workload                     run-workload.sh (the same request mix the app sees in prod)
 #   5. Stop it cleanly                        docker stop -t 300: SIGTERM -> clean exit -> JVM writes app.aot
 #   6. Bake the cache into the final image    Dockerfile.trained: FROM workload-app:untrained + COPY app.aot
 #                                             -> workload-app:workload-trained
 #
 # The two trained images differ only in what the JVM was doing while it recorded the cache:
-#   context-trained   recorded in docker build (docker/app.Dockerfile, stage "context-trained") by only STARTING
+#   context-trained   recorded in docker build (this example's Dockerfile, default target) by only STARTING
 #                     the app: -Dspring.context.exit=onRefresh exits once the Spring context is ready, before any
 #                     request, so the cache holds startup code only. Needs no network or services.
 #   workload-trained  recorded here (steps 3-5) while the app SERVED the workload, so the cache also holds the
@@ -43,8 +43,7 @@ cleanup() {
 trap cleanup EXIT
 
 build() {
-  docker build -q -f "$ROOT/docker/app.Dockerfile" "$@" \
-    --build-arg MODULE=examples/06-training-workload/app --build-arg APP=workload-app \
+  docker build -q -f Dockerfile "$@" \
     --build-arg REVISION="${REVISION:-unknown}" "$ROOT" >/dev/null
 }
 
@@ -72,7 +71,7 @@ expect training.started "" "$ok"
 
 step "4. Training workload: ${TRAIN_REQUESTS} requests, ${TRAIN_PARALLEL} in parallel"
 set +e
-./workload.sh http://localhost:8601 "$TRAIN_REQUESTS" "$TRAIN_PARALLEL" 7 > "$OUT/workload.out"
+./run-workload.sh http://localhost:8601 "$TRAIN_REQUESTS" "$TRAIN_PARALLEL" 7 > "$OUT/workload.out"
 wcode=$?
 set -e
 summary=$(awk '{c[$1]++} END {for (k in c) printf "%s×%d ", k, c[k]}' "$OUT/workload.out")

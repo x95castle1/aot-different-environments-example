@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1
 #
-# Final image of the workload-training pipeline (train.sh, step 6):
+# Final image of the workload-training pipeline (training-pipeline.sh, step 6):
 #
 #   eclipse-temurin:25-jre
-#   └─ workload-app:untrained          <- BASE: the image train.sh ran with -XX:AOTCacheOutput
+#   └─ workload-app:untrained          <- BASE: the image training-pipeline.sh ran with -XX:AOTCacheOutput
 #      └─ workload-app:workload-trained   <- this file: + app.aot, nothing else
 #
 # BASE must be the EXACT image that was trained. The JVM only accepts a cache recorded with the same JDK
@@ -25,4 +25,4 @@ ARG REVISION=unknown
 ARG CREATED=unknown
 LABEL org.opencontainers.image.revision="${REVISION}" \
       org.opencontainers.image.created="${CREATED}" \
-      com.example.aot.training="workload (examples/06-training-workload/workload.sh)"
+      com.example.aot.training="workload (examples/06-training-workload/run-workload.sh)"

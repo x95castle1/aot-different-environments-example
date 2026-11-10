@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# workload.sh <base-url> <requests> [parallel=1] [seed=42]
+# run-workload.sh <base-url> <requests> [parallel=1] [seed=42]
 #
 # A fixed, repeatable request mix against workload-app, used both to TRAIN the AOT cache and to MEASURE
 # warm-up. Prints one line per request: "<http status> <seconds>". Exits non-zero on 5xx or failed requests.
@@ -11,8 +11,8 @@
 # Requests run through ONE curl process per worker (a generated -K config), so connections are reused
 # and curl's own start-up doesn't distort the latencies.
 set -euo pipefail
-base=${1:?usage: workload.sh <base-url> <requests> [parallel] [seed]}
-count=${2:?usage: workload.sh <base-url> <requests> [parallel] [seed]}
+base=${1:?usage: run-workload.sh <base-url> <requests> [parallel] [seed]}
+count=${2:?usage: run-workload.sh <base-url> <requests> [parallel] [seed]}
 parallel=${3:-1}
 seed=${4:-42}
 work=$(mktemp -d)

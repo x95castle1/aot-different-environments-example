@@ -10,11 +10,11 @@ demo: ## Train with the workload, then measure all three images in dev1 and writ
 
 .PHONY: train
 train: ## Only the training pipeline: -> workload-app:untrained, :context-trained, :workload-trained
-	./train.sh
+	./training-pipeline.sh
 
 .PHONY: workload
 workload: ## Drive the request mix at a running instance: make workload URL=http://localhost:8602 N=300
-	./workload.sh $(or $(URL),http://localhost:8602) $(or $(N),300) 1 | awk '{c[$$1]++; t+=$$2} END {for (k in c) printf "%s x%d  ", k, c[k]; printf "\ntotal %.3fs\n", t}'
+	./run-workload.sh $(or $(URL),http://localhost:8602) $(or $(N),300) 1 | awk '{c[$$1]++; t+=$$2} END {for (k in c) printf "%s x%d  ", k, c[k]; printf "\ntotal %.3fs\n", t}'
 
 .PHONY: stop
 stop: ## Remove this example's containers and the training stack

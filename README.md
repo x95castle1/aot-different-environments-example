@@ -62,7 +62,8 @@ Rules that keep one image working everywhere:
 
 ```
 common/                 shared: EnvironmentProfilesPostProcessor (APP_ENV -> profiles), JvmInfo, Fingerprints
-docker/app.Dockerfile   one Dockerfile for every example: offline Maven + Spring AOT, offline JDK AOT-cache training
+docker/app.Dockerfile   shared Dockerfile for examples 01–05: offline Maven + Spring AOT, offline JDK AOT-cache training
+examples/06-*/Dockerfile          06's own (self-contained): untrained stage + startup-only training; Dockerfile.trained adds the workload cache
 infra/                  Config Server, Vault, MongoDB (shared by 03 and 05), config-repo, bootstrap.sh
 examples/NN-*/          app/ (Maven module), Makefile (help/demo/stop/clean/…), demo.sh, README.md
 scripts/lib.sh          demo helpers: expect/record_timing (reporting), startup timing, AOT-cache usage counting
