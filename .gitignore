@@ -4,3 +4,7 @@ target/
 *.iml
 .DS_Store
 reports/
+
+# JDK AOT caches are build artifacts (tied to one JDK build, CPU arch and classpath); they only live inside images
+*.aot
+*.aot.config
