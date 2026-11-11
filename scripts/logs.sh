@@ -16,7 +16,9 @@ pick_container() {
   local running
   running=$(docker ps --filter 'name=^aot-' --format '{{.Names}}\t{{.Status}}' | sort)
   [[ -n "$running" ]] || { echo "No aot-* containers running. Start an example first (make help)." >&2; exit 1; }
-  fzf --delimiter='\t' --with-nth=1,2 --prompt='logs> ' \
+  # --tabstop: one column wider than the longest name, so every status starts in the same column
+  fzf --delimiter='\t' --with-nth=1,2 --tabstop="$(cut -f1 <<<"$running" | awk '{ if (length > m) m = length } END { print m + 2 }')" \
+      --prompt='logs> ' \
       --header='Select a container (Enter = follow logs, Esc = cancel)' \
       --preview='docker logs --tail 40 {1} 2>&1' --preview-window='down,60%,follow' <<<"$running" \
     | cut -f1 || true

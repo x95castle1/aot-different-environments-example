@@ -86,6 +86,9 @@ preview() {
   printf '%sDetails: examples/%s/README.md%s\n' "$d" "$1" "$r"
 }
 
+# name_width: stdin = "name<TAB>text" lines; the longest name's length + 2
+name_width() { cut -f1 | awk '{ if (length > m) m = length } END { print m + 2 }'; }
+
 # last_run <example>: "PASS · 2m 23s · 2026-11-11 14:35 UTC" from reports/<example>/latest, or "not run yet"
 last_run() {
   local dir="reports/$1/latest"
@@ -104,7 +107,8 @@ pick_example() {
   local menu e
   menu=$( { for e in "${EXAMPLES[@]}"; do printf '%s\t%s\n' "$e" "$(title "$e")"; done
             printf 'all\tRun every example in order (stops everything first)\n'; } )
-  fzf --delimiter='\t' --with-nth=1,2 --prompt='example> ' \
+  # --tabstop: one column wider than the longest name, so every title starts in the same column
+  fzf --delimiter='\t' --with-nth=1,2 --tabstop="$(name_width <<<"$menu")" --prompt='example> ' \
       --header='Select an example to run (Enter = run, Esc = cancel)' \
       --preview="'$ROOT/scripts/examples.sh' --preview {1}" \
       --preview-window='right,60%,wrap' <<<"$menu" | cut -f1 || true
