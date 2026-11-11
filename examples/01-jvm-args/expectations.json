@@ -276,7 +276,7 @@
       "mem512": {
         "compareTo": "mem512-off",
         "expect": "improved",
-        "why": "Compared with the same 512 MB container without the cache, the cache still helps. Not compared with prod: a 512 MB limit also makes the JVM start fewer C2 compiler threads (2 instead of 8 on a 16-CPU host), and with the cache on, fewer C2 threads start faster (the cache-off starts barely change)."
+        "why": "Compared with the same 512 MB container without the cache, the cache still helps. Not compared with prod: a 512 MB limit also makes the JVM start fewer C2 compiler threads (2 instead of 8 on a 16-CPU host), and with the cache on, fewer C2 threads start faster (the cache-off starts barely change). That's not a reason to lower -XX:CICompilerCount: under load, fewer C2 threads take longer to reach peak throughput (measured on example 06: about 0.15s faster startup, 3-6s slower to reach peak, same peak)."
       },
       "mem512-off": {
         "expect": "baseline",
