@@ -194,10 +194,34 @@ report_finish() {
     "  Limitations:     \(names("limitation-shown"))",
     "  Unexpected:      \(names("unexpected"))",
     (if (.counts.inconclusive // 0) > 0 then "  Inconclusive:    \(names("inconclusive")) (rerun with more RUNS)" else empty end)
-  ' "$results"
+  ' "$results" | wrap_labeled
   printf '  Report:          %s\n' "${REPORT_DIR#"$ROOT/"}/report.md"
   release_demo_lock
   [[ "$verdict" != "FAIL" ]] || FAILURES=$((FAILURES > 0 ? FAILURES : 1))
+}
+
+# wrap_labeled: stdin = "  Label:   text" lines; wraps each line to the terminal width (at most 120 columns), with the
+# continuation lines indented to where the text starts, so they line up under it. A value may span several lines (e.g.
+# an answer with "- " items): those lines get the same indent, items a hanging indent, and blank lines are dropped.
+wrap_labeled() {
+  local width=120
+  if [[ -t 1 ]]; then width=$(tput cols 2>/dev/null || echo 120); (( width > 120 )) && width=120; fi
+  awk -v width="$width" '
+    # emit(prefix, text, pad): prefix + text wrapped at width, every following line starting with pad
+    function emit(prefix, text, pad,    n, w, i, line, len, first) {
+      line = prefix; len = length(prefix); first = 1
+      n = split(text, w, " ")
+      for (i = 1; i <= n; i++) {
+        if (!first && len + 1 + length(w[i]) > width) { print line; line = pad w[i]; len = length(pad) + length(w[i]); continue }
+        line = line (first ? "" : " ") w[i]; len += (first ? 0 : 1) + length(w[i]); first = 0
+      }
+      print line
+    }
+    match($0, /^  [^:]+: +/) { indent = sprintf("%" RLENGTH "s", ""); emit(substr($0, 1, RLENGTH), substr($0, RLENGTH + 1), indent); next }
+    indent == "" { print; next }                       # not part of a labeled value
+    /^[ \t]*$/ { next }                                 # blank line inside a value
+    /^- / { emit(indent "- ", substr($0, 3), indent "  "); next }
+    { emit(indent, $0, indent) }'
 }
 
 # print_timing_table <results.json>: the report's "Startup times" table, for the terminal

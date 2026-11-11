@@ -54,7 +54,7 @@ write_summary() {
     (.examples[] | "| \(.title) | \(.verdict) | \(.improved | list) | \(.notImproved | list) | \(.unexpected | list) | \(if .report then "[report](\(.report))" else "-" end) |"),
     "",
     "## Answers", "",
-    (.examples[] | "- **\(.title)** (\(.verdict)): \(.answer)")' "$dir/summary.json" > "$dir/summary.md"
+    (.examples[] | "- **\(.title)** (\(.verdict)): \(.answer | gsub("\n(?=.)"; "\n  "))")' "$dir/summary.json" > "$dir/summary.md"
   ln -sfn "$REPORT_RUN_ID" reports/all/latest
 
   echo
