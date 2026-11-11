@@ -15,13 +15,14 @@ Stack: Spring Boot 4.0.9, Spring Cloud 2025.1.4, Java 25, Maven, Docker Compose.
 | ★ | All of the above at once | [05-all-together](examples/05-all-together) | `make examples EX=05` | Four environments, one image, real Config Server/Vault/Mongo, per-env JVM flags |
 
 ```bash
-make examples   # pick an example (or "all") with fzf and run its demo; EX=01..05|all skips the picker
+make examples   # pick an example (or "all") with fzf and run its demo; EX=01..06|all skips the picker
 make help       # all targets
 make test       # unit + architecture tests of every example (local JDK 25)
 make status     # which demo is running (and how far along), every container, the last report
 make logs       # fzf picker over those containers, follow logs
 make stop       # stop everything (every example, including its infrastructure)
-make clean      # stop everything, delete images, volumes, secrets and build output
+make clean      # stop everything, delete images, volumes, secrets and build output (keeps reports/)
+make clean-reports   # delete every demo report (reports/)
 ```
 
 Needs Docker, `jq`, `fzf` (for the pickers) and, only for `make test`/`make build`, a local JDK 25.

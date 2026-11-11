@@ -43,5 +43,12 @@ stop: ## Stop every example (each one's apps and infrastructure)
 	@echo "stopped all examples"
 
 .PHONY: clean
-clean: ## Stop everything; delete images, volumes, secrets and build output of every example
+clean: ## Stop everything; delete images, volumes, secrets and build output of every example (keeps reports/)
 	@for e in $(EXAMPLES); do $(MAKE) -s -C $$e clean >/dev/null 2>&1 || true; done
+
+.PHONY: clean-reports
+clean-reports: ## Delete every demo report (reports/); refuses while a demo is running
+	@if [ -f reports/.demo.lock ] && kill -0 "$$(cut -d' ' -f1 reports/.demo.lock)" 2>/dev/null; then \
+	  echo "A demo is running ($$(cut -d' ' -f2- reports/.demo.lock)); wait for it or stop it first (make status)."; exit 1; fi
+	rm -rf reports
+	@echo "deleted reports/"
