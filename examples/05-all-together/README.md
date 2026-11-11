@@ -16,7 +16,7 @@ demo harness in [`scripts/`](../../scripts) (the root one, not this folder's `sc
 ## Run it
 
 ```bash
-make demo              # start + verify + aot-check
+make demo              # = scripts/demo.sh: build, start infra + four envs, verify, aot-check, startup-compare
 make start             # build the image, start infra, bootstrap credentials, start the four environments
 make verify            # per env: profiles, config source, secrets, Mongo, data isolation; same image everywhere
 make aot-check         # which envs' JVMs used the AOT cache (dev2 runs ZGC on purpose: falls back)

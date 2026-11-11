@@ -29,7 +29,7 @@ shared demo harness in [`scripts/`](../../scripts)).
 ## Run it
 
 ```bash
-make demo                               # six instances of one image, the comparison table, then 5 timed starts each
+make demo                               # = ./demo.sh: build the image, six instances, the comparison table, 5 timed starts each
 make demo RUNS=10                       # more timed starts per instance
 make run APP_ENV=qa APP_ENV_INDEX=1     # one instance on :8201, prints GET /info/profiles
 ```

@@ -36,7 +36,7 @@ IMAGE := profiles-app:1.0.0
 RUNS ?= 5
 
 .PHONY: demo
-demo: image ## Build, run dev1/dev2/qa1/prod1 (+ debug, + without Spring AOT) from one image, compare, then time each RUNS times
+demo: ## Build the image (in demo.sh), run dev1/dev2/qa1/prod1 (+ debug, + without Spring AOT) from one image, compare, then time each RUNS times
 	RUNS=$(RUNS) ./demo.sh
 
 .PHONY: image

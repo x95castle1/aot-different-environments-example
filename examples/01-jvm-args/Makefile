@@ -36,7 +36,7 @@ IMAGE := jvm-args-app:1.0.0
 RUNS ?= 5
 
 .PHONY: demo
-demo: image ## Build, then run every JVM-flag scenario and print the cache/startup table
+demo: ## Build the image, then run every JVM-flag scenario and print the cache/startup table (all in demo.sh)
 	RUNS=$(RUNS) ./demo.sh
 
 .PHONY: image

@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Example 01: the same image started with different JVM flags.
 #
-#   1. The image: which JVM flags its AOT cache was trained with (the prod flags)
-#   2. Each scenario in expectations.json: did the JVM use the AOT cache, and how fast did Spring start
+#   1. Build the image (Dockerfile): Spring AOT + a JDK AOT cache trained with the prod JVM flags
+#   2. The image: which JVM flags its AOT cache was trained with (the prod flags)
+#   3. Each scenario in expectations.json: did the JVM use the AOT cache, and how fast did Spring start
 #      (RUNS timed starts)?
-#   3. Guardrail: -XX:AOTMode=on turns an unusable cache into a failed start
+#   4. Guardrail: -XX:AOTMode=on turns an unusable cache into a failed start
 # Writes reports/01-jvm-args/<run>/report.md.
 #
 # Each step is a function below; main, at the bottom, runs them in order.
@@ -17,6 +18,7 @@ require jq
 IMAGE=jvm-args-app:1.0.0
 RUNS=${RUNS:-5}
 export RUNS
+REVISION=${REVISION:-$(git rev-parse --short HEAD 2>/dev/null || echo unknown)}   # recorded in the image's labels
 PROD=""            # the image's JDK_JAVA_OPTIONS: the flags its AOT cache was trained with (show_image)
 OPTS=()            # the docker run options of the current scenario (set_opts)
 
@@ -47,6 +49,15 @@ start_once() {
 }
 
 # ---------------------------------------------------------------------------------------------------- steps
+
+# build_image: this folder's Dockerfile -> jvm-args-app:1.0.0. Docker reuses its build cache, so this is quick when nothing changed;
+# the first build takes a few minutes (Maven downloads, Spring AOT, AOT-cache training).
+build_image() {
+  step "Build the image jvm-args-app:1.0.0"
+  note "  docker build -t jvm-args-app:1.0.0 .   (Dockerfile: offline Maven build with Spring AOT, then the JDK AOT cache"
+  note "                                    trained with the prod JVM flags; see the Dockerfile's comments)"
+  docker build -q --build-arg REVISION="$REVISION" -t "$IMAGE" . >/dev/null
+}
 
 show_image() {
   step "Image ${IMAGE}"
@@ -97,6 +108,7 @@ check_guardrail() {
 # ---------------------------------------------------------------------------------------------------- main
 
 report_init 01-jvm-args
+build_image
 show_image
 run_scenarios
 check_guardrail

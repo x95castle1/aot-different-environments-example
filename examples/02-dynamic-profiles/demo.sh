@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Example 02: one image (Spring AOT on), profiles decided at startup from APP_ENV + APP_ENV_INDEX.
 #
-#   1. Start six instances of the same image (instances in expectations.json)
-#   2. Check each one: profile-specific VALUES and a @Bean-method choice follow the environment, while
+#   1. Build the image (Dockerfile): Spring AOT (no profile active) + the JDK AOT cache
+#   2. Start six instances of the same image (instances in expectations.json)
+#   3. Check each one: profile-specific VALUES and a @Bean-method choice follow the environment, while
 #      @Profile / @ConditionalOnProperty beans are frozen at build time. One instance runs without Spring AOT.
-#   3. Time each instance on its own (RUNS starts) and count its classes from the AOT cache
+#   4. Time each instance on its own (RUNS starts) and count its classes from the AOT cache
 # Writes reports/02-dynamic-profiles/<run>/report.md.
 #
 # Each step is a function below; main, at the bottom, runs them in order.
@@ -17,6 +18,7 @@ require jq curl
 IMAGE=profiles-app:1.0.0
 RUNS=${RUNS:-5}
 export RUNS
+REVISION=${REVISION:-$(git rev-parse --short HEAD 2>/dev/null || echo unknown)}   # recorded in the image's labels
 OPTS=()            # the current instance's docker run options (set_opts)
 ROWS=()            # the summary table (check_instance)
 cleanup() { docker rm -f $(docker ps -aq --filter 'name=^aot-02-') >/dev/null 2>&1 || true; }
@@ -54,6 +56,15 @@ start_once() {
 }
 
 # ---------------------------------------------------------------------------------------------------- steps
+
+# build_image: this folder's Dockerfile -> profiles-app:1.0.0. Docker reuses its build cache, so this is quick when nothing changed;
+# the first build takes a few minutes (Maven downloads, Spring AOT, AOT-cache training).
+build_image() {
+  step "Build the image profiles-app:1.0.0"
+  note "  docker build -t profiles-app:1.0.0 .   (Dockerfile: offline Maven build with Spring AOT, then the JDK AOT cache"
+  note "                                    trained with the prod JVM flags; see the Dockerfile's comments)"
+  docker build -q --build-arg REVISION="$REVISION" -t "$IMAGE" . >/dev/null
+}
 
 start_instances() {
   step "Starting six instances of ${IMAGE}"
@@ -150,6 +161,7 @@ time_instance() {
 trap cleanup EXIT
 cleanup
 report_init 02-dynamic-profiles
+build_image
 start_instances
 check_instances
 time_instances

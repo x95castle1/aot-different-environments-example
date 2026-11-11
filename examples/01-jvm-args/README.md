@@ -26,7 +26,7 @@ shared demo harness in [`scripts/`](../../scripts)).
 ## Run it
 
 ```bash
-make demo          # build the image, run every scenario 5x, print the table
+make demo          # = ./demo.sh: build the image, run every scenario 5x, print the table
 make demo RUNS=10  # more runs per scenario
 make run FLAGS="-XX:+UseG1GC -Xmx128m"   # one instance on :8101 with your own flags, then GET /info/jvm
 ```
