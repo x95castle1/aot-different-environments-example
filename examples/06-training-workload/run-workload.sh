@@ -4,22 +4,29 @@
 # A fixed, repeatable request mix against workload-app, used both to TRAIN the AOT cache and to MEASURE
 # warm-up. Prints one line per request: "<http status> <seconds>". Exits non-zero on 5xx or failed requests.
 #
-#   first 20 requests  create orders (their ids feed the get/update requests below)
-#   then, seeded mix   40% create · 25% list by customer · 10% get by id · 10% stats aggregation
-#                      10% status update · 5% invalid create (400)
+#   1. Seed orders      the first 20 requests create orders (their ids feed the get/update requests below)
+#   2. The seeded mix   40% create · 25% list by customer · 10% get by id · 10% stats aggregation
+#                       10% status update · 5% invalid create (400)
+#   3. Check            any 5xx, or a request with no response at all, fails the run
 #
 # Requests run through ONE curl process per worker (a generated -K config), so connections are reused
 # and curl's own start-up doesn't distort the latencies. In a config, a request body is data = "...", with its
 # quotes escaped as \".
+#
+# Each step is a function below; main, at the bottom, runs them in order.
 set -euo pipefail
-usage="usage: run-workload.sh <base-url> <requests> [parallel] [seed]"
-base=${1:?$usage}
-count=${2:?$usage}
-parallel=${3:-1}
-seed=${4:-42}
+USAGE="usage: run-workload.sh <base-url> <requests> [parallel] [seed]"
+BASE=${1:?$USAGE}
+COUNT=${2:?$USAGE}
+PARALLEL=${3:-1}
+SEED=${4:-42}
 SEED_ORDERS=20
-work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+WORK=$(mktemp -d)      # the curl configs and their output
+SEEDED=0               # how many seed orders were sent (seed_orders)
+IDS=""                 # the seed orders' ids, space-separated (seed_orders)
+cleanup() { rm -rf "$WORK"; }
+
+# ---------------------------------------------------------------------------------------------------- helpers
 
 # seed_order <i>: the i-th seed order's body, quotes escaped for data = "..."
 seed_order() {
@@ -35,7 +42,7 @@ seed_config() {
   local i
   for i in $(seq 1 "$1"); do
     cat <<EOF
-url = "${base}/orders"
+url = "${BASE}/orders"
 request = "POST"
 header = "Content-Type: application/json"
 data = "$(seed_order "$i")"
@@ -46,9 +53,9 @@ EOF
 }
 
 # mix_configs <n> <ids>: the seeded mix of <n> requests, dealt round-robin into one curl config per worker
-# ($work/mix-<worker>.cfg). <ids> are the seed orders' ids, for the get-by-id and status-update requests.
+# ($WORK/mix-<worker>.cfg). <ids> are the seed orders' ids, for the get-by-id and status-update requests.
 mix_configs() {
-  awk -v n="$1" -v ids="$2" -v seed="$seed" -v base="$base" -v workers="$parallel" -v dir="$work" '
+  awk -v n="$1" -v ids="$2" -v seed="$SEED" -v base="$BASE" -v workers="$PARALLEL" -v dir="$WORK" '
     # send(method, path[, body]): one request, appended to the current worker config f
     function send(method, path, body) {
       printf "url = \"%s%s\"\n", base, path > f
@@ -77,27 +84,41 @@ mix_configs() {
     }'
 }
 
-# send_mix: each worker config through its own curl process, <parallel> at a time
-send_mix() {
-  printf '%s\n' "$work"/mix-*.cfg | xargs -P "$parallel" -I{} sh -c 'curl -s -K "$1" 2>/dev/null || true' _ {}
+# send_configs: each worker config through its own curl process, PARALLEL at a time
+send_configs() {
+  printf '%s\n' "$WORK"/mix-*.cfg | xargs -P "$PARALLEL" -I{} sh -c 'curl -s -K "$1" 2>/dev/null || true' _ {}
 }
 
-# 1. Seed orders (sequential, part of the count) and keep their ids
-seed_n=$(( count < SEED_ORDERS ? count : SEED_ORDERS ))
-seed_config "$seed_n" > "$work/seed.cfg"
-curl -s -K "$work/seed.cfg" > "$work/seed.out" 2>/dev/null || true
-sed -n 's/^@@ //p' "$work/seed.out" | tee "$work/status.out"
-ids=$(grep -o '"id":"[^"]*"' "$work/seed.out" | cut -d'"' -f4 | tr '\n' ' ' || true)
-[[ -n "$ids" ]] || { echo "no orders created: is the app up and connected to Mongo?" >&2; exit 1; }
+# ---------------------------------------------------------------------------------------------------- steps
 
-# 2. The seeded mix, split across workers
-if (( count > seed_n )); then
-  mix_configs $((count - seed_n)) "$ids"
-  send_mix | tee -a "$work/status.out"
-fi
+# seed_orders: sequential, part of the count. Sets SEEDED and IDS; stops the run if no order was created.
+seed_orders() {
+  SEEDED=$(( COUNT < SEED_ORDERS ? COUNT : SEED_ORDERS ))
+  seed_config "$SEEDED" > "$WORK/seed.cfg"
+  curl -s -K "$WORK/seed.cfg" > "$WORK/seed.out" 2>/dev/null || true
+  sed -n 's/^@@ //p' "$WORK/seed.out" | tee "$WORK/status.out"
+  IDS=$(grep -o '"id":"[^"]*"' "$WORK/seed.out" | cut -d'"' -f4 | tr '\n' ' ' || true)
+  [[ -n "$IDS" ]] || { echo "no orders created: is the app up and connected to Mongo?" >&2; exit 1; }
+}
 
-# 3. Any 5xx, or a request that got no response at all (000), fails the run
-if grep -qE '^(5[0-9][0-9]|000) ' "$work/status.out"; then
-  echo "server errors or failed requests in the workload" >&2
-  exit 1
-fi
+# send_mix: the rest of the count, split across PARALLEL workers
+send_mix() {
+  if (( COUNT > SEEDED )); then
+    mix_configs $((COUNT - SEEDED)) "$IDS"
+    send_configs | tee -a "$WORK/status.out"
+  fi
+}
+
+check_responses() {
+  if grep -qE '^(5[0-9][0-9]|000) ' "$WORK/status.out"; then
+    echo "server errors or failed requests in the workload" >&2
+    exit 1
+  fi
+}
+
+# ---------------------------------------------------------------------------------------------------- main
+
+trap cleanup EXIT
+seed_orders
+send_mix
+check_responses

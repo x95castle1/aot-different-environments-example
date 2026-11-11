@@ -14,6 +14,18 @@ Spring AOT runs at build time; does that freeze the profiles?
 
 No external services needed.
 
+## What's in this folder
+
+Everything this example builds and runs; nothing outside it is needed (only `make demo`'s report uses the repo's
+shared demo harness in [`scripts/`](../../scripts)).
+
+| Path | What it is |
+|---|---|
+| [`app/`](app) | profiles-app (Maven module): `application-<profile>.yml` files, the profile post-processor, the pitfall beans |
+| [`Dockerfile`](Dockerfile) | the image: offline Maven build with Spring AOT, then offline JDK AOT-cache training |
+| [`pom.xml`](pom.xml), `mvnw` | this example's Maven build (`make test`, local JDK 25) |
+| [`demo.sh`](demo.sh), [`expectations.json`](expectations.json) | the demo and what it expects |
+
 ## Run it
 
 ```bash
@@ -81,8 +93,8 @@ The labels, expected values and explanations come from [`expectations.json`](exp
 
 ## How it works
 
-- [`EnvironmentProfilesPostProcessor`](../../common/src/main/java/com/example/common/env/EnvironmentProfilesPostProcessor.java)
-  (shared in `common/`) runs at startup, before Spring reads config files, and adds the profiles. Environment
+- [`EnvironmentProfilesPostProcessor`](app/src/main/java/com/example/profiles/env/EnvironmentProfilesPostProcessor.java)
+  (registered in [`META-INF/spring.factories`](app/src/main/resources/META-INF/spring.factories)) runs at startup, before Spring reads config files, and adds the profiles. Environment
   post-processors run on every start, including with Spring AOT.
 - **Right way:** [`NotifierConfig`](app/src/main/java/com/example/profiles/notify/NotifierConfig.java). One bean
   definition (fixed at build time); its method body reads `app.notifier` at startup and returns `Log`/`Email`/`PagerNotifier`.

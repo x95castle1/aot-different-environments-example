@@ -10,6 +10,11 @@
 #   save_evidence <name>         stdin -> raw/<name> in the report
 #   aot_usage <name> <cmd...>    run AOT_USAGE_SCRIPT via <cmd...>; sets CACHED, TOTAL, AOT_VERDICT; saves evidence
 #   finish                       in the process that called report_init: render report.md/results.json, print summary
+#
+# A library: sourcing it only defines functions and settings, nothing runs. Sections: output, one demo at a time,
+# reporting, timing and the AOT cache.
+
+# ---------------------------------------------------------------------------------------------------- output
 
 if [[ -t 1 ]]; then
   C_GREEN=$'\033[32m'; C_RED=$'\033[31m'; C_YELLOW=$'\033[33m'; C_BOLD=$'\033[1m'; C_DIM=$'\033[2m'; C_RESET=$'\033[0m'
@@ -19,16 +24,18 @@ fi
 
 FAILURES=0
 
+# step / note / pass / fail <text>: a heading, a dim note, a passed check, a failed check (counted in FAILURES)
 step()  { printf '\n%s== %s%s\n' "$C_BOLD" "$*" "$C_RESET"; }
 note()  { printf '%s%s%s\n' "$C_DIM" "$*" "$C_RESET"; }
 pass()  { printf '  %s✓%s %s\n' "$C_GREEN" "$C_RESET" "$1"; }
 fail()  { printf '  %s✗%s %s\n' "$C_RED" "$C_RESET" "$1"; FAILURES=$((FAILURES + 1)); }
 
+# require <command...>: stop unless every command is installed
 require() { for c in "$@"; do command -v "$c" >/dev/null || { echo "$c is required"; exit 1; }; done; }
 
-# ---------------------------------------------------------------------------------------------- one demo at a time
+# ---------------------------------------------------------------------------------------------------- one demo at a time
 
-# acquire_demo_lock <what>: demos share container names, ports and the shared infra, and parallel runs skew
+# acquire_demo_lock <what>: demos share host ports and the machine's CPU, and parallel runs skew
 # each other's startup timings, so only one runs at a time. A lock whose process has gone is taken over.
 # `make examples EX=all` holds it for the whole sequence; the demos it runs inherit it (DEMO_LOCK_PID).
 DEMO_LOCK_FILE="${ROOT:-.}/reports/.demo.lock"
@@ -56,11 +63,12 @@ release_demo_lock() {
   return 0
 }
 
-# ---------------------------------------------------------------------------------------------- reporting
+# ---------------------------------------------------------------------------------------------------- reporting
 
 # expect_init <example>: where check definitions come from (also done by report_init)
 expect_init() { EXAMPLE=$1; EXPECT_FILE="$ROOT/examples/$1/expectations.json"; export EXAMPLE EXPECT_FILE; }
 
+# report_init <example>: take the demo lock and start a run report in reports/<example>/<run id>/ (run.json)
 report_init() {
   require jq
   acquire_demo_lock "$1"
@@ -87,6 +95,7 @@ report_init() {
     > "$REPORT_DIR/run.json"
 }
 
+# _report_update_run <jq args...>: rewrite run.json through jq
 _report_update_run() { local tmp; tmp=$(mktemp); jq "$@" "$REPORT_DIR/run.json" > "$tmp" && mv "$tmp" "$REPORT_DIR/run.json"; }
 
 # report_image <image ref>: records what the run used (id, digest, JDK, flags the AOT cache was trained with)
@@ -160,6 +169,7 @@ finish() {
   printf '%sAll checks passed.%s\n' "$C_GREEN" "$C_RESET"
 }
 
+# report_finish: render results.json + report.md, point latest at this run, print the timings and the verdict
 report_finish() {
   _report_update_run --arg t "$(date -u +%FT%TZ)" '.finished = $t'
   "$ROOT/scripts/render-report.sh" "$REPORT_DIR" "$EXPECT_FILE"
@@ -223,7 +233,7 @@ print_timing_table() {
     else empty end' "$1"
 }
 
-# ---------------------------------------------------------------------------------------------- helpers
+# ---------------------------------------------------------------------------------------------------- timing and the AOT cache
 
 # wait_for_http <url> [seconds]
 wait_for_http() {

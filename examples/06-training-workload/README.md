@@ -29,15 +29,15 @@ Real environment systems are never contacted, and the training services are dele
 ## The environments: dev1 and prod1
 
 The images are timed in **dev1**. The image you'd ship, **workload-trained**, is then deployed unchanged to both
-**dev1** and **prod1**. Both are services in [`compose.yml`](compose.yml) on the shared infrastructure, and an
+**dev1** and **prod1**. Both are services in [`compose.yml`](compose.yml), next to this example's own Config Server, Vault and Mongo, and an
 environment is nothing but env vars plus what it fetches at startup:
 
 | | dev1 | prod1 |
 |---|---|---|
 | Env vars → profiles | `APP_ENV=dev APP_ENV_INDEX=1` → `dev,dev1` | `APP_ENV=prod APP_ENV_INDEX=1` → `prod,prod1` |
-| Config Server: shared | [`workload-app.yml`](../../infra/config-repo/workload-app.yml) (Mongo host) | same |
-| Config Server: tier | [`workload-app-dev.yml`](../../infra/config-repo/workload-app-dev.yml) (`max-page-size: 50`) | [`workload-app-prod.yml`](../../infra/config-repo/workload-app-prod.yml) (`max-page-size: 100`) |
-| Config Server: environment | [`workload-app-dev1.yml`](../../infra/config-repo/workload-app-dev1.yml) (database/user `workload_dev1`) | [`workload-app-prod1.yml`](../../infra/config-repo/workload-app-prod1.yml) (database/user `workload_prod1`) |
+| Config Server: shared | [`workload-app.yml`](config-repo/workload-app.yml) (Mongo host) | same |
+| Config Server: tier | [`workload-app-dev.yml`](config-repo/workload-app-dev.yml) (`max-page-size: 50`) | [`workload-app-prod.yml`](config-repo/workload-app-prod.yml) (`max-page-size: 100`) |
+| Config Server: environment | [`workload-app-dev1.yml`](config-repo/workload-app-dev1.yml) (database/user `workload_dev1`) | [`workload-app-prod1.yml`](config-repo/workload-app-prod1.yml) (database/user `workload_prod1`) |
 | Vault (Mongo password) | `secret/workload-app/dev1` (its own token) | `secret/workload-app/prod1` (its own token) |
 | Container memory | 768 MB | 1 GB |
 | JVM flags | `-XX:+UseG1GC -Xmx384m -XX:+ExitOnOutOfMemoryError` | image default = the flags the caches were trained with (`MaxRAMPercentage=75` → 768 MB heap) |
@@ -55,6 +55,7 @@ make train             # only the training pipeline: workload-app:untrained, :co
 make envs              # run dev1 (:8602) and prod1 (:8603) from compose.yml; IMAGE=workload-app:<tag> picks the build
 make workload URL=http://localhost:8602 N=300   # drive the request mix at a running instance
 make stop              # stop the environments and remove the training stack
+make test              # unit + architecture tests (local JDK 25)
 ```
 
 What runs is described in two compose files; the scripts only do the steps in order, measure, and write the report:
@@ -62,15 +63,19 @@ What runs is described in two compose files; the scripts only do the steps in or
 | File | What it runs |
 |---|---|
 | [`training/compose.yml`](training/compose.yml) | the **training stack**: throwaway Config Server, Vault and Mongo, plus `trainer` (the untrained image started with `-XX:AOTCacheOutput`, `stop_grace_period: 300s`) |
-| [`compose.yml`](compose.yml) | the **environments** `app-dev1` and `app-prod1` on the shared infrastructure: profiles, Vault token, JVM flags, memory, ports. `IMAGE` selects which of the three images runs |
+| [`compose.yml`](compose.yml) | the **environments** `app-dev1` and `app-prod1`, plus the Config Server ([`config-server/`](config-server) serving [`config-repo/`](config-repo)), Vault and Mongo they connect to: profiles, Vault token, JVM flags, memory, ports. `IMAGE` selects which of the three images runs |
+
+Everything else this example needs is in this folder too: the app ([`app/`](app)) and its Maven build
+([`pom.xml`](pom.xml), `mvnw`), and [`bootstrap.sh`](bootstrap.sh), which gives an environment (or the training
+stack) its credentials. Only `make demo`'s report uses the repo's shared demo harness in [`scripts/`](../../scripts).
 
 ## How each image is built
 
 All three images share one build of the app. Two come straight from stages of this example's own
 [`Dockerfile`](Dockerfile); the third is built on top of the first by [`Dockerfile.trained`](Dockerfile.trained)
 after the training run. The example is self-contained: copy this folder's two Dockerfiles, `training-pipeline.sh`
-and `run-workload.sh` as a starting point for your own app. (`Dockerfile`'s build stage mirrors the shared
-`docker/app.Dockerfile` that examples 01–05 use.)
+and `run-workload.sh` as a starting point for your own app. (`Dockerfile`'s build stage is the same as in the other
+examples' Dockerfiles.)
 
 ```
 eclipse-temurin:25-jre                      ← JRE_IMAGE in Dockerfile
@@ -89,7 +94,7 @@ warning and runs without a cache. This image is the baseline, and it is what `tr
 ### `context-trained`: cache recorded in `docker build` by only starting the app
 
 This is the default target of [`Dockerfile`](Dockerfile), and the same startup-only training examples 01–05 do in
-the shared Dockerfile. `training-pipeline.sh` builds it in step 1 for
+their Dockerfiles. `training-pipeline.sh` builds it in step 1 for
 comparison:
 
 ```dockerfile
@@ -145,16 +150,16 @@ was trained, even if a tag moves in between.
 ## The pipeline ([`training-pipeline.sh`](training-pipeline.sh)), step by step
 
 These are the commands the script runs, in order; you can run them by hand from `examples/06-training-workload/`
-(the shared infrastructure isn't needed for training):
+(the environments' infrastructure isn't needed for training):
 
 ```bash
 # 1. the image without a cache (and the startup-only one, for comparison)
-docker build -f Dockerfile --target untrained -t workload-app:untrained ../..
-docker build -f Dockerfile                    -t workload-app:context-trained ../..
+docker build --target untrained -t workload-app:untrained .
+docker build                    -t workload-app:context-trained .
 
 # 2. throwaway services with fake data (no host ports; deleted at the end)
-docker compose -f training/compose.yml up -d --wait config-server vault mongo
-INFRA_COMPOSE=$PWD/training/compose.yml ../../infra/bootstrap.sh workload-app training
+docker compose -f training/compose.yml up -d --wait --build config-server vault mongo
+COMPOSE_FILE=training/compose.yml ./bootstrap.sh training
 
 # 3. the trainer: the untrained image, recording a cache (Spring AOT on, prod flags from the image), on :8601
 docker compose -f training/compose.yml up -d trainer
@@ -171,9 +176,9 @@ docker compose -f training/compose.yml down -v
 docker build -f Dockerfile.trained --build-arg BASE=workload-app:untrained -t workload-app:workload-trained out/
 rm -rf out      # *.aot is git-ignored anyway
 
-# then run it as the environments (needs the shared infrastructure)
-make -C ../../infra up && ../../infra/bootstrap.sh workload-app dev1 prod1
-docker compose up -d                       # dev1 on :8602, prod1 on :8603
+# then run it as the environments, with their own Config Server, Vault and Mongo
+docker compose up -d --wait --build config-server vault mongo && ./bootstrap.sh dev1 prod1
+docker compose up -d app-dev1 app-prod1    # dev1 on :8602, prod1 on :8603
 curl -s localhost:8603/info/runtime | jq   # prod1's profiles, Config Server files, database, JVM flags
 ```
 

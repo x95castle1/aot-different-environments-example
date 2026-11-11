@@ -1,8 +1,0 @@
-**/target
-.git
-.secrets
-.idea
-*.iml
-reports
-*.aot
-*.aot.config

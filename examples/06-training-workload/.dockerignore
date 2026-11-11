@@ -1,0 +1,6 @@
+**/target
+.secrets
+.idea
+*.iml
+*.aot
+*.aot.config

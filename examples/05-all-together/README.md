@@ -7,7 +7,11 @@ and the JDK AOT cache. Each one:
 - runs with its own JVM flags (example 01);
 - runs the same image ID as the others (example 04).
 
-Uses the shared infrastructure in [`infra/`](../../infra).
+Self-contained: this folder holds the app ([`app/`](app)), its [`Dockerfile`](Dockerfile) and Maven build
+([`pom.xml`](pom.xml), `mvnw`), and everything it runs against: [`compose.yml`](compose.yml) starts its own
+Config Server ([`config-server/`](config-server), serving [`config-repo/`](config-repo)), Vault and MongoDB, and
+[`bootstrap.sh`](bootstrap.sh) gives each environment its credentials. Only the demo's report uses the repo's shared
+demo harness in [`scripts/`](../../scripts) (the root one, not this folder's `scripts/`).
 
 ## Run it
 
@@ -21,7 +25,8 @@ make fail-fast-demo    # startup refuses to run when Config Server/Vault are unr
 make report ENV=prod1  # an env's startup report
 make logs              # fzf picker over every running container (or ENV=dev1)
 make status            # this example's containers
-make stop              # stop the four environments (infra keeps running)
+make stop              # stop the four environments and the infra
+make test              # unit + architecture tests (local JDK 25)
 ```
 
 Endpoints: dev1 `:8081`, dev2 `:8082`, qa1 `:8083`, prod1 `:8084`.
@@ -39,10 +44,10 @@ Endpoints: dev1 `:8081`, dev2 `:8082`, qa1 `:8083`, prod1 `:8084`.
 | prod1 | `prod,prod1` | image default (= training flags) | mongo | `demo_prod1` | `secret/demo-app/prod1` |
 
 Where the values come from:
-- **Config Server** ([`infra/config-repo/demo-app*.yml`](../../infra/config-repo)): Mongo host/db/user and the audit sink.
+- **Config Server** ([`config-repo/demo-app*.yml`](config-repo)): Mongo host/db/user and the audit sink.
 - **Vault**: the Mongo password and the API key.
 - **Env vars** in [`compose.yml`](compose.yml): `APP_ENV`, `APP_ENV_INDEX`, the server URLs and JVM flags.
-- **Vault token**: per environment, written by [`infra/bootstrap.sh`](../../infra/bootstrap.sh). Its policy can read
+- **Vault token**: per environment, written by [`bootstrap.sh`](bootstrap.sh). Its policy can read
   only that environment's paths.
 
 ## Measured locally (Apple Silicon, Docker Desktop)

@@ -10,6 +10,20 @@ All three environments report the same build and all three use the AOT cache.
 
 Needs only a local registry (`localhost:5001`, started by the demo); no Config Server, Vault or Mongo.
 
+## What's in this folder
+
+Everything this example builds and runs; nothing outside it is needed (only `make demo`'s report uses the repo's
+shared demo harness in [`scripts/`](../../scripts)).
+
+| Path | What it is |
+|---|---|
+| [`app/`](app) | one-image-app (Maven module); `GET /info` shows the build, profiles and settings |
+| [`Dockerfile`](Dockerfile) | the image, built once: offline Maven build with Spring AOT, then offline JDK AOT-cache training |
+| [`pom.xml`](pom.xml), `mvnw` | this example's Maven build (`make test`, local JDK 25) |
+| [`compose.yml`](compose.yml) | the local registry and the three environments, each running the image by digest |
+| [`envs/`](envs) | each environment's settings: `app.env` (env vars) and `config/` (mounted at `/config`) |
+| [`demo.sh`](demo.sh), [`expectations.json`](expectations.json) | the demo and what it expects |
+
 ## Run it
 
 ```bash

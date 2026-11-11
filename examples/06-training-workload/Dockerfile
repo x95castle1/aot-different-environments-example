@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 #
 # Example 06's Dockerfile: everything needed to build workload-app, self-contained so it can be copied as a
-# template. (The build stage mirrors the shared docker/app.Dockerfile used by examples 01-05; keep them in step.)
+# template. (The build stage is the same as in the other examples' Dockerfiles.)
 #
 #   eclipse-temurin:25-jre
 #   └─ untrained         (--target untrained)  the app, prod JVM flags, entrypoint; NO AOT cache.
@@ -10,9 +10,9 @@
 #      └─ context-trained (default target)     + a cache recorded right here, in docker build, by only STARTING
 #                                              the app: what examples 01-05 do. Kept for comparison.
 #
-# Build context = repo root (the Maven reactor and the shared common module live there):
-#   docker build -f examples/06-training-workload/Dockerfile --target untrained -t workload-app:untrained .
-#   docker build -f examples/06-training-workload/Dockerfile                    -t workload-app:context-trained .
+# Build context = this folder (it holds the whole Maven build):
+#   docker build --target untrained -t workload-app:untrained .
+#   docker build                    -t workload-app:context-trained .
 
 ARG JDK_IMAGE=eclipse-temurin:25-jdk
 ARG JRE_IMAGE=eclipse-temurin:25-jre
@@ -21,7 +21,7 @@ ARG JRE_IMAGE=eclipse-temurin:25-jre
 # 1. Build the jar. Dependencies are downloaded first; the build itself runs offline.
 ############################
 FROM ${JDK_IMAGE} AS build
-ARG MODULE=examples/06-training-workload/app
+ARG MODULE=app
 ARG APP=workload-app
 WORKDIR /workspace
 COPY . .

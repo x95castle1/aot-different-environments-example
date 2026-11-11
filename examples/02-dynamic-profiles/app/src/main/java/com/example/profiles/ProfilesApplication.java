@@ -5,7 +5,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
  * Example 02: active profiles decided at startup ({@code APP_ENV} + {@code APP_ENV_INDEX}, see
- * {@code aot-common}'s EnvironmentProfilesPostProcessor), with Spring AOT on.
+ * {@link com.example.profiles.env.EnvironmentProfilesPostProcessor}), with Spring AOT on.
  */
 @SpringBootApplication
 public class ProfilesApplication {

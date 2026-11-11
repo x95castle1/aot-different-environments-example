@@ -13,8 +13,8 @@ make status              # which demo is running (how far along), all containers
 make stop                # stop everything
 ```
 
-Needs Docker (running), `jq`, `curl` and `unzip`. Examples 03 and 05 start Config Server, Vault and MongoDB
-themselves. Exit code 0 means PASS or INCONCLUSIVE, 1 means FAIL.
+Needs Docker (running), `jq`, `curl` and `unzip`. Each example is self-contained: 03, 05 and 06 start their own
+Config Server, Vault and MongoDB (their `compose.yml`). Only the demo/report harness in `scripts/` is shared. Exit code 0 means PASS or INCONCLUSIVE, 1 means FAIL.
 
 ## Read the results
 

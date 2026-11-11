@@ -11,6 +11,18 @@ startup error.
 
 No external services needed.
 
+## What's in this folder
+
+Everything this example builds and runs; nothing outside it is needed (only `make demo`'s report uses the repo's
+shared demo harness in [`scripts/`](../../scripts)).
+
+| Path | What it is |
+|---|---|
+| [`app/`](app) | jvm-args-app, the Spring Boot app (Maven module); `GET /info/jvm` shows the flags and the cache in use |
+| [`Dockerfile`](Dockerfile) | the image: offline Maven build with Spring AOT, then the JDK AOT cache trained with the prod flags |
+| [`pom.xml`](pom.xml), `mvnw` | this example's Maven build (`make test`, local JDK 25) |
+| [`demo.sh`](demo.sh), [`expectations.json`](expectations.json) | the demo and what it expects |
+
 ## Run it
 
 ```bash
@@ -60,7 +72,7 @@ The labels, expected values and explanations come from [`expectations.json`](exp
 
 ## How it works
 
-- [`docker/app.Dockerfile`](../../docker/app.Dockerfile) sets the prod flags once
+- [`Dockerfile`](Dockerfile) sets the prod flags once
   (`ENV JDK_JAVA_OPTIONS=-XX:+UseG1GC -XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError`) and trains the cache
   with them (`-XX:AOTCacheOutput`, `-Dspring.context.exit=onRefresh`, `--network=none`).
 - Prod doesn't set `JDK_JAVA_OPTIONS`, so it runs with exactly the trained flags. Every other environment overrides it.

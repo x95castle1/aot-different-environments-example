@@ -1,30 +1,34 @@
-# The ENVIRONMENTS: dev1 and prod1 running workload-app on the shared infrastructure
-# (infra/compose.yml: Config Server, Vault, Mongo on the aot-infra network).
+# The ENVIRONMENTS: dev1 and prod1 running workload-app, plus the systems they connect to at startup (this
+# example's own Config Server serving config-repo/, Vault and Mongo), all in this one compose project.
+# Only the apps publish ports; the apps and bootstrap.sh reach the others by service name.
 #
 # An environment is nothing but these env vars plus what it fetches at startup:
 #   APP_ENV + APP_ENV_INDEX -> profiles (dev,dev1 / prod,prod1) -> Config Server files workload-app-<tier>.yml and
-#   workload-app-<env>.yml; its own Vault token (written by infra/bootstrap.sh) -> its Mongo password; its JVM flags.
+#   workload-app-<env>.yml; its own Vault token (.secrets/<env>.env, written by ./bootstrap.sh) -> its Mongo
+#   password; its JVM flags.
 #
 # IMAGE picks which build runs (default: the workload-trained image you'd ship). demo.sh uses it to time all three:
 #   IMAGE=workload-app:untrained | workload-app:context-trained | workload-app:workload-trained
 #
-# By hand (from examples/06-training-workload/, after `make -C ../../infra up` and
-#          `../../infra/bootstrap.sh workload-app dev1 prod1`):
-#   docker compose up -d                 # both environments: dev1 on :8602, prod1 on :8603
+# By hand (from examples/06-training-workload/): make envs, or
+#   docker compose up -d --wait --build config-server vault mongo
+#   ./bootstrap.sh dev1 prod1
+#   docker compose up -d app-dev1 app-prod1   # dev1 on :8602, prod1 on :8603
 #   curl -s localhost:8603/info/runtime | jq
 #   docker compose down
 
-name: aot-06-environments
+# Demo-only credentials (Vault root token, Mongo root password). Never do this for real.
 
-networks:
-  default:
-    name: aot-infra
-    external: true
+name: aot-06-environments
 
 x-app: &app
   image: ${IMAGE:-workload-app:workload-trained}
   pull_policy: never
   restart: "no"
+  depends_on:
+    config-server: { condition: service_healthy }
+    vault: { condition: service_healthy }
+    mongo: { condition: service_healthy }
 
 x-app-env: &app-env
   CONFIG_SERVER_URL: http://config-server:8888
@@ -33,6 +37,39 @@ x-app-env: &app-env
   JAVA_TOOL_OPTIONS:
 
 services:
+  config-server:
+    build:
+      context: .
+      dockerfile: config-server/Dockerfile
+    image: aot-06-config-server:1.0.0
+    volumes:
+      - ./config-repo:/config-repo:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8888/actuator/health"]
+      interval: 2s
+      retries: 60
+
+  vault:
+    image: hashicorp/vault:2.1
+    cap_add: [IPC_LOCK]
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: root
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    healthcheck:
+      test: ["CMD", "vault", "status", "-address=http://127.0.0.1:8200"]
+      interval: 2s
+      retries: 60
+
+  mongo:
+    image: mongo:8.0
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 2s
+      retries: 60
+
   app-dev1:
     <<: *app
     environment:
@@ -42,7 +79,7 @@ services:
       # dev1's own JVM flags: a smaller heap. Compatible with the cache, which was trained with the prod flags.
       JDK_JAVA_OPTIONS: -XX:+UseG1GC -Xmx384m -XX:+ExitOnOutOfMemoryError
     env_file:
-      - path: ../../.secrets/workload-app/dev1.env     # VAULT_TOKEN: can read only secret/workload-app/dev1
+      - path: .secrets/dev1.env     # VAULT_TOKEN: can read only secret/workload-app/dev1
         required: false
     mem_limit: 768m
     ports:
@@ -56,7 +93,7 @@ services:
       APP_ENV_INDEX: "1"
       # No JDK_JAVA_OPTIONS: prod runs with the image default, the flags the AOT caches were trained with.
     env_file:
-      - path: ../../.secrets/workload-app/prod1.env    # VAULT_TOKEN: can read only secret/workload-app/prod1
+      - path: .secrets/prod1.env    # VAULT_TOKEN: can read only secret/workload-app/prod1
         required: false
     mem_limit: 1g
     ports:

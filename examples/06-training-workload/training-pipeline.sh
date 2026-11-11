@@ -47,10 +47,10 @@ cleanup() {
 
 # ---------------------------------------------------------------------------------------------------- helpers
 
-# build <docker build options...>: build this example's Dockerfile (build context: the repo root)
+# build <docker build options...>: build this example's Dockerfile (build context: this folder)
 build() {
   docker build -q -f Dockerfile "$@" \
-    --build-arg REVISION="${REVISION:-unknown}" "$ROOT" >/dev/null
+    --build-arg REVISION="${REVISION:-unknown}" . >/dev/null
 }
 
 # save_training_log: the trainer's log -> $OUT/training.log and the report's raw/training.log
@@ -80,15 +80,13 @@ build_images() {
   build --target untrained -t workload-app:untrained
   build -t workload-app:context-trained
   note "  workload-app:untrained, workload-app:context-trained"
-  # The training stack's Config Server is the shared infra's image
-  docker image inspect demo-config-server:1.0.0 >/dev/null 2>&1 || make -s -C "$ROOT/infra" up >/dev/null
 }
 
 start_training_services() {
   step "2. Throwaway training services (fake data, deleted afterwards)"
-  "${TRAINING[@]}" up -d --wait config-server vault mongo >/dev/null 2>&1
-  note "  docker compose -f training/compose.yml up -d --wait config-server vault mongo"
-  INFRA_COMPOSE="$PWD/training/compose.yml" "$ROOT/infra/bootstrap.sh" workload-app training | sed 's/^/  /'
+  "${TRAINING[@]}" up -d --wait --build config-server vault mongo >/dev/null 2>&1
+  note "  docker compose -f training/compose.yml up -d --wait --build config-server vault mongo"
+  COMPOSE_FILE=training/compose.yml ./bootstrap.sh training | sed 's/^/  /'
 }
 
 # start_trainer: stops the run (finish) if the app doesn't come up

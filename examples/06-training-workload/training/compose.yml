@@ -1,15 +1,17 @@
 # The TRAINING stack: throwaway services + the app whose AOT cache is being recorded.
 #
 #   config-server, vault, mongo   the same kinds of systems the app connects to in every environment, but
-#                                 disposable, with fake data, and no host ports (nothing clashes with the shared
-#                                 infra). Seeded by infra/bootstrap.sh; deleted after every training run.
+#                                 disposable, with fake data, and no host ports (nothing clashes with the
+#                                 environments in ../compose.yml). The Config Server is this example's own
+#                                 (../config-server) serving training/config-repo. Seeded by ../bootstrap.sh;
+#                                 deleted after every training run.
 #   trainer                       workload-app:untrained, started with -XX:AOTCacheOutput so the JVM records
 #                                 what runs while run-workload.sh sends it requests. Stopping it cleanly
 #                                 (docker compose stop trainer) makes the JVM write /tmp/app.aot on exit.
 #
 # By hand (from examples/06-training-workload/):
 #   docker compose -f training/compose.yml up -d --wait config-server vault mongo
-#   INFRA_COMPOSE=$PWD/training/compose.yml ../../infra/bootstrap.sh workload-app training
+#   COMPOSE_FILE=training/compose.yml ./bootstrap.sh training
 #   docker compose -f training/compose.yml up -d trainer
 #   ./run-workload.sh http://localhost:8601 3000 8
 #   docker compose -f training/compose.yml stop trainer
@@ -24,8 +26,10 @@ networks:
 
 services:
   config-server:
-    image: demo-config-server:1.0.0
-    pull_policy: never
+    build:
+      context: ..
+      dockerfile: config-server/Dockerfile
+    image: aot-06-config-server:1.0.0
     volumes:
       - ./config-repo:/config-repo:ro
     healthcheck:
@@ -69,7 +73,7 @@ services:
       CONFIG_SERVER_URL: http://config-server:8888
       VAULT_ADDR: http://vault:8200
     env_file:
-      - path: ../../../.secrets/workload-app/training.env   # VAULT_TOKEN, written by infra/bootstrap.sh
+      - path: ../.secrets/training.env   # VAULT_TOKEN, written by ../bootstrap.sh
         required: false
     # On stop: SIGTERM -> Spring's graceful shutdown -> normal JVM exit -> JDK 25 assembles the cache in a child
     # JVM (a few seconds). The long grace period makes sure it's never killed before the cache is written.

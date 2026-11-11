@@ -36,8 +36,8 @@
     },
     "profiles": {
       "group": "Decided at startup", "label": "active profiles",
-      "why": "EnvironmentProfilesPostProcessor (common/) turns APP_ENV + APP_ENV_INDEX into '<env>,<env><index>' at startup, before config files load. Profiles from SPRING_PROFILES_ACTIVE are kept and go last, so they override.",
-      "ifUnexpected": ["Is EnvironmentProfilesPostProcessor registered? (common/src/main/resources/META-INF/spring.factories)", "Check the instance's APP_ENV / APP_ENV_INDEX in the evidence (startup log)."]
+      "why": "EnvironmentProfilesPostProcessor (app/.../env/) turns APP_ENV + APP_ENV_INDEX into '<env>,<env><index>' at startup, before config files load. Profiles from SPRING_PROFILES_ACTIVE are kept and go last, so they override.",
+      "ifUnexpected": ["Is EnvironmentProfilesPostProcessor registered? (app/src/main/resources/META-INF/spring.factories)", "Check the instance's APP_ENV / APP_ENV_INDEX in the evidence (startup log)."]
     },
     "db-name": {
       "group": "Decided at startup", "label": "app.db-name (from application-<env>.yml)",

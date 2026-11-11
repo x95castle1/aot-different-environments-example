@@ -10,7 +10,7 @@
   },
   "tested": [
     "A fresh (no-cache) image build, checking that the Maven build with Spring AOT and the AOT-cache training both ran under --network=none and skipped the remote imports.",
-    "Shared infrastructure (Config Server, Vault, MongoDB) plus dev1's credentials: a Mongo user, its password in Vault, and a Vault token that can read only dev1's secrets.",
+    "This example's own Config Server, Vault and MongoDB (compose.yml) plus dev1's credentials: a Mongo user, its password in Vault, and a Vault token that can read only dev1's secrets.",
     "Starting dev1 from that image: which Config Server file and Vault path it loaded, which database it used, and whether Mongo accepted the password.",
     "Rotating the Mongo password in Vault and restarting the same image.",
     "Three broken setups on one-off copies of dev1: Config Server unreachable, Vault unreachable, invalid Vault token."
@@ -24,7 +24,7 @@
     "build.imports-skipped": {
       "group": "Build (no network)", "label": "Config Server + Vault imports at build time", "expected": "skipped (unreachable)",
       "why": "build-time.yml points both clients at .invalid hosts with fail-fast off, so Spring AOT and the training run skip the imports instead of failing. Vault stays enabled, so the bean graph matches runtime.",
-      "ifUnexpected": ["Check that build-time.yml is passed via spring.config.additional-location (pom.xml process-aot and docker/app.Dockerfile).", "It must not be a profile file (application-build.yml): the imports run before profile files are read."]
+      "ifUnexpected": ["Check that build-time.yml is passed via spring.config.additional-location (app/pom.xml process-aot and Dockerfile).", "It must not be a profile file (application-build.yml): the imports run before profile files are read."]
     },
     "build.training-offline": {
       "group": "Build (no network)", "label": "JDK AOT-cache training run", "expected": "succeeded with --network=none",
@@ -34,7 +34,7 @@
     "started": {
       "group": "Startup", "label": "started", "expected": "yes",
       "why": "The infra is up and dev1 has valid credentials.",
-      "ifUnexpected": ["Read the startup log in the evidence.", "Is the infra healthy? make -C infra status"]
+      "ifUnexpected": ["Read the startup log in the evidence.", "Is the infra healthy? docker compose ps (in examples/03-startup-connections)"]
     },
     "start.aot": {
       "group": "Startup", "label": "Spring AOT generated code in use", "expected": "true",
@@ -44,17 +44,17 @@
     "start.configserver": {
       "group": "Startup", "label": "Config Server file for dev1", "expected": "loaded connections-app-dev1.yml",
       "why": "The configserver: import is resolved at every startup (AOT or not), using the profiles decided at startup (dev,dev1).",
-      "ifUnexpected": ["Check infra/config-repo/connections-app-dev1.yml exists and the Config Server is healthy.", "Check the profiles in the startup log."]
+      "ifUnexpected": ["Check examples/03-startup-connections/config-repo/connections-app-dev1.yml exists and the Config Server is healthy.", "Check the profiles in the startup log."]
     },
     "start.vault": {
       "group": "Startup", "label": "Vault path for dev1", "expected": "vault:secret/connections-app/dev1 (2 keys)",
       "why": "The vault:// import is resolved at startup with dev1's token; its policy allows only dev1's paths.",
-      "ifUnexpected": ["Was bootstrap run for dev1? (.secrets/connections-app/dev1.env)", "Vault runs in dev mode (in-memory): after a restart of Vault, run the bootstrap again."]
+      "ifUnexpected": ["Was bootstrap run for dev1? (examples/03-startup-connections/.secrets/dev1.env)", "Vault runs in dev mode (in-memory): after a restart of Vault, run the bootstrap again."]
     },
     "start.mongo-db": {
       "group": "Startup", "label": "Mongo database (from Config Server)", "expected": "connections_dev1",
       "why": "The database name comes from Config Server, not from the image.",
-      "ifUnexpected": ["Check connections-app-dev1.yml in infra/config-repo."]
+      "ifUnexpected": ["Check config-repo/connections-app-dev1.yml in examples/03-startup-connections."]
     },
     "start.mongo-ping": {
       "group": "Startup", "label": "Mongo accepted the password from Vault", "short": "Mongo connection", "expected": "ok",
@@ -94,6 +94,6 @@
   "reproduce": [
     "make examples EX=03                                 # fresh build + full demo + report",
     "make -C examples/03-startup-connections start       # infra + dev1 on :8301 (GET /info/connections)",
-    "make -C infra stop                                  # stop the shared infra afterwards"
+    "make -C examples/03-startup-connections stop        # stop dev1 and its infra afterwards"
   ]
 }

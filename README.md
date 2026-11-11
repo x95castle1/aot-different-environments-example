@@ -17,10 +17,10 @@ Stack: Spring Boot 4.0.9, Spring Cloud 2025.1.4, Java 25, Maven, Docker Compose.
 ```bash
 make examples   # pick an example (or "all") with fzf and run its demo; EX=01..05|all skips the picker
 make help       # all targets
-make test       # unit + architecture tests for every module (local JDK 25)
+make test       # unit + architecture tests of every example (local JDK 25)
 make status     # which demo is running (and how far along), every container, the last report
 make logs       # fzf picker over those containers, follow logs
-make stop       # stop everything (all examples + shared infra)
+make stop       # stop everything (every example, including its infrastructure)
 make clean      # stop everything, delete images, volumes, secrets and build output
 ```
 
@@ -60,25 +60,34 @@ Rules that keep one image working everywhere:
 
 ## Layout
 
+Every example is **self-contained**: its folder holds everything to build, run and test it, so you can read or copy
+one without the rest of the repo. Only the demo/report harness in `scripts/` is shared.
+
 ```
-common/                 shared: EnvironmentProfilesPostProcessor (APP_ENV -> profiles), JvmInfo, Fingerprints
-docker/app.Dockerfile   shared Dockerfile for examples 01–05: offline Maven + Spring AOT, offline JDK AOT-cache training
-examples/06-*/Dockerfile          06's own (self-contained): untrained stage + startup-only training; Dockerfile.trained adds the workload cache
-infra/                  Config Server, Vault, MongoDB (shared by 03 and 05), config-repo, bootstrap.sh
-examples/NN-*/          app/ (Maven module), Makefile (help/demo/stop/clean/…), demo.sh, README.md
-scripts/lib.sh          demo helpers: expect/record_timing (reporting), startup timing, AOT-cache usage counting
-scripts/report*.jq      turn a run's records + expectations.json into results.json and report.md
-examples/NN-*/expectations.json   per example: expected results, explanations, hints, timing rules
-docs/reading-reports.md how to read the reports (outcomes, verdicts, timing rules, schema)
-scripts/examples.sh     fzf example picker behind `make examples`
-scripts/logs.sh         fzf log picker
-make/common.mk          shared Makefile bits (help, JDK 25 detection, git revision)
+examples/NN-*/                    one example, standalone:
+  app/                              the Spring Boot app (Maven module), incl. its own copies of the small helpers
+                                    (EnvironmentProfilesPostProcessor: APP_ENV -> profiles, JvmInfo, Fingerprints)
+  pom.xml, mvnw, .mvn/              its own Maven build (Spring Boot parent; app + config-server where there is one)
+  Dockerfile                        its image: offline Maven + Spring AOT, offline JDK AOT-cache training
+                                    (06: untrained stage + startup-only training; Dockerfile.trained adds the workload cache)
+  compose.yml                       what it runs: its environments and (03, 05, 06) its own Config Server, Vault, MongoDB
+  config-server/, config-repo/      (03, 05, 06) the local Config Server and the files it serves
+  bootstrap.sh                      (03, 05, 06) per-environment credentials: Mongo user, Vault secret/policy/token
+  Makefile                          help/test/demo/start/stop/clean/…
+  demo.sh, expectations.json        the demo, and its expected results, explanations, hints, timing rules
+  README.md
+scripts/                          the shared demo/report harness:
+  lib.sh                            demo helpers: expect/record_timing (reporting), startup timing, AOT-cache usage counting
+  report*.jq, render-report.sh      turn a run's records + expectations.json into results.json and report.md
+  examples.sh, status.sh, logs.sh   `make examples` (fzf picker), `make status`, `make logs`
+docs/reading-reports.md           how to read the reports (outcomes, verdicts, timing rules, schema)
 ```
 
 ## Demo shortcuts (not for production)
-Vault runs in dev mode (in-memory, root token `root`), so after `make stop` the examples bootstrap again
-automatically (03) or with `make start` (05). Mongo uses a fixed root password. `infra/bootstrap.sh` stands in for
-the platform that issues per-environment credentials; it writes only Vault tokens to `.secrets/` (git-ignored).
+Vault runs in dev mode (in-memory, root token `root`), so after `make stop` an example bootstraps again
+(automatically in `make demo`, or with `make start` / `make envs`). Mongo uses a fixed root password. Each example's
+`bootstrap.sh` stands in for the platform that issues per-environment credentials; it writes only Vault tokens to the
+example's `.secrets/` (git-ignored). The infrastructure publishes no host ports, so examples never clash.
 
 ## Adding CyberArk later
 Add another `optional:` config-data import (a small `ConfigDataLocationResolver` + `ConfigDataLoader` calling the

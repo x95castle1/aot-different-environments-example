@@ -10,7 +10,7 @@
   },
   "tested": [
     "The training pipeline (training-pipeline.sh): build the untrained image, start throwaway Config Server / Vault / Mongo with fake data, run the untrained image with -XX:AOTCacheOutput, drive 3,000 mixed requests (8 in parallel), stop it with SIGTERM, and build the final image as the untrained image plus app.aot.",
-    "Two environments on the shared infrastructure: dev1 (profiles dev,dev1, its own JVM flags with a smaller heap) and prod1 (profiles prod,prod1, the image's default flags, i.e. the ones the caches were trained with). Each gets tier settings (workload-app-dev.yml / -prod.yml) and environment settings (workload-app-dev1.yml / -prod1.yml) from Config Server, and its own Mongo password from Vault.",
+    "Two environments, with this example's own Config Server, Vault and Mongo (compose.yml): dev1 (profiles dev,dev1, its own JVM flags with a smaller heap) and prod1 (profiles prod,prod1, the image's default flags, i.e. the ones the caches were trained with). Each gets tier settings (workload-app-dev.yml / -prod.yml) and environment settings (workload-app-dev1.yml / -prod1.yml) from Config Server, and its own Mongo password from Vault.",
     "Three images of the same app timed in dev1: no cache, a cache trained on startup only (in the build), a cache trained by the workload.",
     "Per image, RUNS fresh starts (round-robin, Mongo data reset before each): Spring's startup time, the latency of the first request, and the total time of the first 50 and the first 300 requests of the same fixed request mix.",
     "Per image, one run with class-load logging across startup + 300 requests: how many classes came from the AOT cache and how many had to be loaded from the jars.",
@@ -22,10 +22,10 @@
       "group": "Training pipeline",
       "label": "untrained image started against the throwaway services",
       "expected": "yes",
-      "why": "The training stack has the same kinds of services as every environment, with fake data and credentials from infra/bootstrap.sh.",
+      "why": "The training stack has the same kinds of services as every environment, with fake data and credentials from bootstrap.sh.",
       "ifUnexpected": [
         "Read raw/training.log.",
-        "Is demo-config-server:1.0.0 built? (make -C infra up builds it)"
+        "Did aot-06-config-server:1.0.0 build? (docker compose -f training/compose.yml build config-server)"
       ]
     },
     "training.workload": {
@@ -132,7 +132,7 @@
       "why": "The same image, started with this environment's env vars and Vault token.",
       "ifUnexpected": [
         "Read the environment's failed-start log in the evidence.",
-        "Was the environment bootstrapped? (.secrets/workload-app/<env>.env)"
+        "Was the environment bootstrapped? (examples/06-training-workload/.secrets/<env>.env)"
       ]
     },
     "env.profiles": {
@@ -148,7 +148,7 @@
       "label": "Config Server files (most specific first)",
       "why": "Config Server serves the files for the active profiles: the environment file (-dev1 / -prod1), then the tier file (-dev / -prod), then the shared file. Most specific wins.",
       "ifUnexpected": [
-        "Check the files exist in infra/config-repo (workload-app.yml, -dev.yml, -dev1.yml, -prod.yml, -prod1.yml)."
+        "Check the files exist in examples/06-training-workload/config-repo (workload-app.yml, -dev.yml, -dev1.yml, -prod.yml, -prod1.yml)."
       ]
     },
     "env.tier-setting": {
@@ -156,7 +156,7 @@
       "label": "app.orders.max-page-size (tier setting)",
       "why": "Set per tier by Config Server (50 in dev, 100 in prod) and used by the orders endpoint, not baked into the image.",
       "ifUnexpected": [
-        "Check workload-app-dev.yml / workload-app-prod.yml in infra/config-repo."
+        "Check workload-app-dev.yml / workload-app-prod.yml in examples/06-training-workload/config-repo."
       ]
     },
     "env.mongo-db": {
@@ -164,7 +164,7 @@
       "label": "Mongo database (from Config Server)",
       "why": "Each environment has its own database and user, from its environment file.",
       "ifUnexpected": [
-        "Check workload-app-<env>.yml in infra/config-repo."
+        "Check workload-app-<env>.yml in examples/06-training-workload/config-repo."
       ]
     },
     "env.vault": {
@@ -172,7 +172,7 @@
       "label": "Vault path loaded",
       "why": "Each environment's token can only read its own path; the Mongo password comes from there.",
       "ifUnexpected": [
-        "Rerun the bootstrap: infra/bootstrap.sh workload-app dev1 prod1"
+        "Rerun the bootstrap: examples/06-training-workload/bootstrap.sh dev1 prod1"
       ]
     },
     "env.mongo-ping": {
@@ -181,7 +181,7 @@
       "expected": "ok",
       "why": "The password only exists in Vault and Mongo; the app read it at startup.",
       "ifUnexpected": [
-        "Rerun the bootstrap: infra/bootstrap.sh workload-app dev1 prod1"
+        "Rerun the bootstrap: examples/06-training-workload/bootstrap.sh dev1 prod1"
       ]
     },
     "env.cache": {

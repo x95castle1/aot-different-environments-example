@@ -2,7 +2,7 @@ package com.example.jvmargs;
 
 import java.util.Map;
 
-import com.example.common.runtime.JvmInfo;
+import com.example.jvmargs.runtime.JvmInfo;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

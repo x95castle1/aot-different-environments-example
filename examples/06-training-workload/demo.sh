@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Example 06: train the AOT cache with a real workload (training-pipeline.sh), then measure what it buys.
 #
-# Three images of the same app, all measured in the "real" dev1 environment (shared infra, its own
-# credentials), never in the training stack:
+# Three images of the same app, all measured in the "real" dev1 environment (compose.yml: this example's own
+# Config Server, Vault and Mongo, dev1's own credentials), never in the training stack:
 #   untrained          no AOT cache at all
 #   context-trained    cache trained in the build on startup only (-Dspring.context.exit=onRefresh)
 #   workload-trained   cache trained by training-pipeline.sh with the request mix in run-workload.sh
@@ -24,9 +24,9 @@ EARLY_REQUESTS=50                    # the "first 50 requests" timing
 export RUNS
 IMAGES=(untrained context-trained workload-trained)
 METRICS=(startup first early warmup)
-# The environments (dev1, prod1) are defined in compose.yml: env vars, Vault token, JVM flags, memory, ports.
+# The environments (dev1, prod1) and the systems they connect to are defined in compose.yml: env vars, Vault token,
+# JVM flags, memory, ports.
 ENVC=(docker compose -f compose.yml)
-INFRA=(docker compose -f "$ROOT/infra/compose.yml")
 # The demo's own instrumentation for counting classes (JAVA_TOOL_OPTIONS): log every class load and its source
 CLASS_LOG="-Xlog:disable -Xlog:class+load=info:file=/tmp/cl.log"
 # A row of the environments table
@@ -38,6 +38,8 @@ ROWS=()             # the environments table (check_environment)
 ENV_IMAGES=()       # the image id each environment ran (check_environment)
 
 cleanup() { "${ENVC[@]}" down --remove-orphans >/dev/null 2>&1 || true; }
+# stop_apps: remove the app containers only; the infra (and Vault's in-memory secrets) keeps running
+stop_apps() { "${ENVC[@]}" rm -sf app-dev1 app-prod1 >/dev/null 2>&1 || true; }
 
 # ---------------------------------------------------------------------------------------------------- helpers
 
@@ -46,7 +48,7 @@ short() { echo "${1%-trained}"; }
 
 # reset_data <env>: empty that environment's orders collection, so every run starts from the same data
 reset_data() {
-  "${INFRA[@]}" exec -T mongo mongosh --quiet -u root -p example --authenticationDatabase admin \
+  "${ENVC[@]}" exec -T mongo mongosh --quiet -u root -p example --authenticationDatabase admin \
     --eval "db.getSiblingDB('workload_$1').orders.drop()" >/dev/null
 }
 
@@ -55,11 +57,11 @@ reset_data() {
 # JAVA_TOOL_OPTIONS is the demo's own instrumentation (class-load logging), never set otherwise.
 start_app() {
   local env=$1 img=$2 tool=${3:-}
-  cleanup
+  stop_apps
   if [[ -n "$tool" ]]; then
-    JAVA_TOOL_OPTIONS="$tool" IMAGE="workload-app:$img" "${ENVC[@]}" up -d --force-recreate "app-$env" >/dev/null 2>&1
+    JAVA_TOOL_OPTIONS="$tool" IMAGE="workload-app:$img" "${ENVC[@]}" up -d --no-deps --force-recreate "app-$env" >/dev/null 2>&1
   else
-    env -u JAVA_TOOL_OPTIONS IMAGE="workload-app:$img" "${ENVC[@]}" up -d --force-recreate "app-$env" >/dev/null 2>&1
+    env -u JAVA_TOOL_OPTIONS IMAGE="workload-app:$img" "${ENVC[@]}" up -d --no-deps --force-recreate "app-$env" >/dev/null 2>&1
   fi
   NAME=$("${ENVC[@]}" ps -q "app-$env")
   PORT=$("${ENVC[@]}" port "app-$env" 8080 | sed 's/.*://')
@@ -134,17 +136,18 @@ show_images() {
   note "  workload-trained  cache recorded by training-pipeline.sh while the app served real requests: startup + request-path code"
 }
 
-# start_environments: the shared infrastructure, with dev1's and prod1's settings and credentials
+# start_environments: this example's Config Server, Vault and Mongo, with dev1's and prod1's settings and credentials
 start_environments() {
-  step "Environments: dev1 and prod1 on the shared infrastructure"
-  note "  Both defined in compose.yml (services app-dev1, app-prod1):"
-  "${ENVC[@]}" config --format json | jq -r '.services | to_entries[] | .key as $service | .value
+  step "Environments: dev1 and prod1, with their own Config Server, Vault and Mongo"
+  note "  All defined in compose.yml (services app-dev1, app-prod1; config-server, vault, mongo):"
+  "${ENVC[@]}" config --format json | jq -r '.services | to_entries[] | select(.key | startswith("app-")) | .key as $service | .value
     | "    \($service)  profiles from APP_ENV=\(.environment.APP_ENV) APP_ENV_INDEX=\(.environment.APP_ENV_INDEX)"
       + "  memory \((.mem_limit | tonumber) / 1048576 | floor) MB"
       + "  JVM flags: \(.environment.JDK_JAVA_OPTIONS // "image default (the flags the caches were trained with)")"'
   note "  Each gets its tier + environment settings from Config Server and its own Mongo password from Vault."
-  make -s -C "$ROOT/infra" up >/dev/null 2>&1
-  "$ROOT/infra/bootstrap.sh" workload-app dev1 prod1 | sed 's/^/  /'
+  "${ENVC[@]}" up -d --wait --build config-server vault mongo >/dev/null 2>&1
+  note "  docker compose up -d --wait --build config-server vault mongo"
+  ./bootstrap.sh dev1 prod1 | sed 's/^/  /'
 }
 
 # ---------------------------------------------------------------------------------------------------- measure
@@ -158,7 +161,7 @@ time_images() {
     step "Round ${run}/${RUNS}"
     for img in "${IMAGES[@]}"; do time_image "$img" "$run"; done
   done
-  cleanup
+  stop_apps
   record_timings
 }
 
@@ -202,7 +205,7 @@ count_cached_classes() {
       workload) workload_jars=$FROM_JARS ;;
     esac
   done
-  cleanup
+  stop_apps
   if [[ -n "$context_jars" && -n "$workload_jars" ]]; then
     expect fewer-outside "" "$([[ $workload_jars -lt $context_jars ]] && echo yes || echo no)" "" workload.classes.txt
   fi
@@ -215,7 +218,7 @@ check_environments() {
   note "  The same image, started as dev1 (profiles dev,dev1) and as prod1 (profiles prod,prod1)."
   check_environment dev1 dev 50
   check_environment prod1 prod 100
-  cleanup
+  stop_apps
   (( ${#ENV_IMAGES[@]} > 0 )) || return 0
   expect env.same-image "" "$(printf '%s\n' "${ENV_IMAGES[@]}" | sort -u | wc -l | tr -d ' ')"
   # shellcheck disable=SC2059  # ROW_FORMAT is a format

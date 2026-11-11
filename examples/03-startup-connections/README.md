@@ -9,14 +9,29 @@ resolves at every startup, AOT or not. Mongo connects lazily. So the image is bu
 each environment starts it. Rotating a secret needs a restart, not a rebuild. A missing or broken dependency stops
 startup (fail fast).
 
-Uses the shared infrastructure in [`infra/`](../../infra) (Config Server, Vault, MongoDB), which the demo starts.
+## What's in this folder
+
+Everything this example builds and runs against; nothing outside it is needed (only `make demo`'s report uses the
+repo's shared demo harness in [`scripts/`](../../scripts)).
+
+| Path | What it is |
+|---|---|
+| [`app/`](app) | connections-app, the Spring Boot app (Maven module) |
+| [`Dockerfile`](Dockerfile) | the image: offline Maven build with Spring AOT, then offline JDK AOT-cache training |
+| [`pom.xml`](pom.xml), `mvnw` | this example's Maven build (`app` + `config-server`) |
+| [`compose.yml`](compose.yml) | its own Config Server, Vault and MongoDB, plus the dev1 environment |
+| [`config-server/`](config-server) | the local stand-in for each environment's Config Server |
+| [`config-repo/`](config-repo) | what the Config Server serves: `connections-app.yml`, `connections-app-dev1.yml` |
+| [`bootstrap.sh`](bootstrap.sh) | the "platform": dev1's Mongo user, Vault secret, policy and token (`.secrets/dev1.env`) |
+| [`demo.sh`](demo.sh), [`expectations.json`](expectations.json) | the demo and what it expects |
 
 ## Run it
 
 ```bash
 make demo     # offline build, start dev1, rotate its secret, break each dependency
 make start    # just infra + dev1 on :8301 (GET /info/connections)
-make stop     # stop dev1 (infra keeps running; make -C ../../infra stop)
+make stop     # stop dev1 and its infra
+make test     # unit tests (local JDK 25)
 ```
 
 ## What you'll see
@@ -53,13 +68,13 @@ The labels, expected values and explanations come from [`expectations.json`](exp
   env vars per environment (see [`compose.yml`](compose.yml)).
 - [`build-time.yml`](app/src/main/resources/build-time.yml) is added only at build time
   (`spring.config.additional-location`, in the [pom](app/pom.xml) and the
-  [Dockerfile](../../docker/app.Dockerfile)). It points both clients at `.invalid` hosts and switches fail-fast off,
+  [Dockerfile](Dockerfile)). It points both clients at `.invalid` hosts and switches fail-fast off,
   so the imports are skipped. It contains values only, never `*.enabled`, so the bean graph matches runtime.
 - It's deliberately **not** `application-build.yml`. Config Server and Vault are called in the *initial*
   config-data phase, before profile files are read, so a profile file would be too late.
 - The Dockerfile downloads dependencies in one step (with network), then builds with `-o` under
   `--network=none`. This was tested from an empty dependency cache.
-- [`infra/bootstrap.sh`](../../infra/bootstrap.sh) acts as the platform: a Mongo user per environment, its password
+- [`bootstrap.sh`](bootstrap.sh) acts as the platform: a Mongo user per environment, its password
   in Vault (`secret/connections-app/dev1`), a Vault policy and token that can read only that path.
 - `spring.cloud.refresh.enabled=false`: refresh scope can't work with a bean graph fixed at build time. Values change
   on restart, as step 4 shows.

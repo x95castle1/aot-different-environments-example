@@ -5,8 +5,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.example.common.runtime.Fingerprints;
-import com.example.common.runtime.JvmInfo;
 import org.bson.Document;
 
 import org.springframework.core.env.ConfigurableEnvironment;
