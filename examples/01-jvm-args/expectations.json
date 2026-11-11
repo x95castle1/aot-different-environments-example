@@ -231,7 +231,7 @@
         "scenarios": { "cpu1": "cpu1-off" }
       },
       {
-        "label": "vs prod",
+        "label": "vs prod (trained flags)",
         "default": "prod",
         "scenarios": { "cpu1": null }
       }

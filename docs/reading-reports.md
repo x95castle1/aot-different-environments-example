@@ -46,10 +46,11 @@ reports/all/<run id>/summary.md|json      after `make examples EX=all`: one line
   - "smaller heap" vs "prod flags";
   - in 02: each environment vs "prod1", and "prod1" vs "prod1 without Spring AOT" (JDK AOT cache still on).
   - in 06: per metric, context-trained vs untrained and workload-trained vs context-trained.
-- A scenario with `"expect": "baseline"` isn't judged itself; it's what other rows are compared with. (`"reference"`,
+- A scenario with `"expect": "baseline"` isn't judged itself; it's only there to compare with (e.g. cache off). A
+  judged scenario can also be compared with, like 01's prod flags, but it isn't a baseline. (`"reference"`,
   the old name, still works.)
 - Optionally, `timings.columns` in `expectations.json` adds fixed comparison columns to the table, so every row is
-  shown against the same baselines (01: "vs cache off" and "vs prod"). Each column has a `default` scenario and
+  compared with the same scenarios (01: "vs cache off" and "vs prod (trained flags)"). Each column has a `default` scenario and
   per-scenario overrides (`null` = no comparison). A default of `*.<x>` means the row's own group: in 06, for the
   row `first.workload`, `*.untrained` is `first.untrained` (the same metric). Baseline rows show no comparisons.
   These columns are for reading only; a `*` marks the one that matches the row's `compareTo`, which is what the

@@ -106,8 +106,8 @@ def section($title; $items; $none):
        def row($cells): "| " + ($cells | map(cell) | join(" | ")) + " |";
        def head: ["Scenario"] + (if $hasCache then ["JDK AOT cache"] else [] end) + [if $mixed then "Runs" else "Runs (s)" end, "Median"];
      if ($cols | length) > 0 then
-       # Fixed comparison columns: every row against the same baselines; * marks the one the outcome is judged on
-       "Every row is compared with the same baselines. \\* marks the comparison its outcome is judged on.", "",
+       # Fixed comparison columns: each compares every row with one scenario; * marks the one the outcome is judged on
+       "Each comparison column compares every row with one scenario. \\* marks the comparison its outcome is judged on.", "",
        row(head + $cols + ["Outcome"]),
        row(head + $cols + ["Outcome"] | map("---")),
        ($timings[] | row([.short] + cache + [runs, .shown.median]

@@ -60,7 +60,7 @@ Then each instance is started again on its own, `RUNS` times, and the run ends w
   Spring AOT (build-time bean code) is on for every row except "prod1 without Spring AOT", so the
   "vs no Spring AOT" column is what Spring AOT alone is worth for each environment.
 
-== Startup times (median of each scenario's runs; every row vs the same baselines; * = the comparison its outcome is judged on)
+== Startup times (median of each scenario's runs; each column compares every row with one scenario; * = the comparison its outcome is judged on)
   scenario                  JDK AOT cache   runs (s)                       median  vs no Spring AOT  vs prod1  outcome
   dev1                      USED 7558/7717  0.243 0.236 0.249 0.24 0.245   0.243s  1.8× faster       +1% *     unchanged
   dev2                      USED 7558/7719  0.237 0.313 0.252 0.244 0.244  0.244s  1.8× faster       +2% *     unchanged
@@ -75,7 +75,7 @@ There are two different AOTs here, and only one of them changes:
   row; the column shows whether the JVM used it and how many of the loaded classes came from it.
 - **Spring AOT**: bean definitions generated as code at build time. Only the last row runs without it.
 
-Every row is compared with the same two baselines:
+Every row is compared with the same two scenarios:
 - **vs no Spring AOT**: how much faster this environment starts than prod1 without Spring AOT. Both use the same
   JDK AOT cache, so this is what Spring AOT alone is worth, and every environment gets it, not only prod1.
 - **vs prod1**: did this environment's profiles cost startup time compared with prod1?

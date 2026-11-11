@@ -55,7 +55,7 @@ $exp[0] as $e
        elif $want == "unchanged" then (if $ratio > 1 + $band then "unexpected" else "unchanged" end)
        elif $want == "no-benefit-expected" then (if $ratio >= 1 - $band then "no-benefit-expected" else "unexpected" end)
        else "unexpected" end) as $outcome
-    # Optional fixed comparison columns (timings.columns): every row vs the same baselines, for the table only.
+    # Optional fixed comparison columns (timings.columns): each compares every row with one scenario, for the table only.
     # The outcome above is still judged on compareTo; "judged" marks the column that matches it.
     # A column's default "*.<x>" means the row's own group: for row "first.workload", "*.untrained" is "first.untrained".
     # Baseline rows get no comparisons: they are what the others are compared with.

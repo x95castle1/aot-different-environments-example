@@ -193,7 +193,7 @@ trainer, drive the workload, stop, copy the cache, build, push. Promote the fina
   context-trained    13845 classes loaded,  11685 from the AOT cache,  2160 from the jars
   workload-trained   13957 classes loaded,  13641 from the AOT cache,   316 from the jars
 
-== Timings (median of each scenario's runs; every row vs the same baselines; * = the comparison its outcome is judged on)
+== Timings (median of each scenario's runs; each column compares every row with one scenario; * = the comparison its outcome is judged on)
   scenario                               runs                             median  vs untrained   vs context-trained  outcome
   startup time · untrained               1.171 1.112 1.197 1.094 1.114 s  1.114s  -              -                   baseline
   startup time · context-trained         0.452 0.521 0.467 0.47 0.443 s   0.467s  2.4× faster *  -                   improved
@@ -209,7 +209,7 @@ trainer, drive the workload, stop, copy the cache, build, push. Promote the fina
   first 300 requests · workload-trained  0.559 0.588 0.592 0.505 0.522 s  0.559s  -23%           -25% *              improved
 ```
 
-- Rows are grouped by what's measured; within each group, every row is compared with the same two baselines:
+- Rows are grouped by what's measured; within each group, every row is compared with the same two scenarios:
   - **vs untrained**: what each cache is worth compared with no cache at all;
   - **vs context-trained**: what workload training adds on top of the startup-only cache;
   - **\***: the comparison the outcome is judged on. The other rows are information only.

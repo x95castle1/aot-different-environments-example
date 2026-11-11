@@ -230,8 +230,8 @@ print_timing_table() {
   local heading="Startup times"
   jq -e 'any(.results[]; .kind == "timing" and .metric != null)' "$1" >/dev/null && heading="Timings"
   local explain='each row is compared with the scenario named under "compared with"'
-  # With fixed comparison columns (timings.columns in expectations.json) every row has the same baselines
-  jq -e 'any(.results[]; .comparisons != null)' "$1" >/dev/null && explain='every row vs the same baselines; * = the comparison its outcome is judged on'
+  # With fixed comparison columns (timings.columns in expectations.json) each column compares every row with one scenario
+  jq -e 'any(.results[]; .comparisons != null)' "$1" >/dev/null && explain='each column compares every row with one scenario; * = the comparison its outcome is judged on'
   printf '\n%s== %s%s %s(median of each scenario'"'"'s runs; %s)%s\n' "$C_BOLD" "$heading" "$C_RESET" "$C_DIM" "$explain" "$C_RESET"
   jq -r '
     def secs: if . == null then "-" else "\(.)s" end;
