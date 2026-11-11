@@ -20,7 +20,7 @@
   "tested": [
     "One image (jvm-args-app) whose AOT cache was trained in the build with the prod flags (the image's default JDK_JAVA_OPTIONS).",
     "10 JVM-flag scenarios on that same image. Each runs once with class-load logging, to count how many classes came from the AOT cache, and RUNS times to time Spring's startup (median reported).",
-    "Two reference scenarios with the cache switched off (-XX:AOTMode=off), at full CPU and at 1 CPU, to measure what the cache is worth.",
+    "Two baseline scenarios with the cache switched off (-XX:AOTMode=off), at full CPU and at 1 CPU, to measure what the cache is worth.",
     "Guardrail: ZGC with -XX:AOTMode=on, which should refuse to start rather than silently start without the cache."
   ],
   "noiseBand": 0.25,
@@ -57,7 +57,7 @@
     },
     {
       "id": "cpu1-off",
-      "label": "1 CPU, cache off (reference)",
+      "label": "1 CPU, cache off (baseline)",
       "flags": "{PROD} -XX:AOTMode=off",
       "dockerOpts": "--cpus 1"
     },
@@ -81,7 +81,7 @@
     },
     {
       "id": "cache-off",
-      "label": "cache off (reference)",
+      "label": "cache off (baseline)",
       "flags": "{PROD} -XX:AOTMode=off",
       "dockerOpts": ""
     }
@@ -161,7 +161,7 @@
       "short": "1 CPU, cache off",
       "expected": "not used",
       "outcome": "info",
-      "why": "Reference run: -XX:AOTMode=off switches the cache off on purpose.",
+      "why": "Baseline run: -XX:AOTMode=off switches the cache off on purpose.",
       "ifUnexpected": [
         "The flag -XX:AOTMode=off didn't take effect; check the scenario's flags."
       ]
@@ -206,7 +206,7 @@
       "short": "cache off",
       "expected": "not used",
       "outcome": "info",
-      "why": "Reference run: -XX:AOTMode=off switches the cache off on purpose.",
+      "why": "Baseline run: -XX:AOTMode=off switches the cache off on purpose.",
       "ifUnexpected": [
         "The flag -XX:AOTMode=off didn't take effect; check the scenario's flags."
       ]
@@ -224,6 +224,18 @@
     }
   },
   "timings": {
+    "columns": [
+      {
+        "label": "vs cache off",
+        "default": "cache-off",
+        "scenarios": { "cpu1": "cpu1-off" }
+      },
+      {
+        "label": "vs prod",
+        "default": "prod",
+        "scenarios": { "cpu1": null }
+      }
+    ],
     "scenarios": {
       "prod": {
         "compareTo": "cache-off",
@@ -255,8 +267,8 @@
         "why": "1 CPU makes every start slower than prod, but compared with the same 1-CPU limit without the cache, the cache still helps a lot."
       },
       "cpu1-off": {
-        "expect": "reference",
-        "why": "Reference: 1 CPU with the cache off."
+        "expect": "baseline",
+        "why": "Baseline: 1 CPU with the cache off."
       },
       "extra-props": {
         "compareTo": "prod",
@@ -272,14 +284,14 @@
       "zgc": {
         "compareTo": "cache-off",
         "expect": "no-benefit-expected",
-        "why": "With the cache unusable, ZGC starts about as fast as the cache-off reference: no benefit, as expected on JDK 25.",
+        "why": "With the cache unusable, ZGC starts about as fast as the cache-off baseline: no benefit, as expected on JDK 25.",
         "ifUnexpected": [
           "If ZGC was much faster than cache-off, check its cache check: the JDK may be 26+, where ZGC can use the cache."
         ]
       },
       "cache-off": {
-        "expect": "reference",
-        "why": "Reference: prod flags with the cache off."
+        "expect": "baseline",
+        "why": "Baseline: prod flags with the cache off."
       }
     }
   },

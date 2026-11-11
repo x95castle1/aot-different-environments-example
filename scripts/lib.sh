@@ -6,7 +6,7 @@
 #   report_image <image>         record an image the run used (digest, JDK, training flags)
 #   expect <id> <subject> <measured> [expected] [evidence]
 #                                a check; label/expected/why/hints come from examples/<example>/expectations.json
-#   record_timing <id> <secs...> startup times for a scenario; judged at render time against its reference
+#   record_timing <id> <secs...> startup times for a scenario; judged at render time against its baseline
 #   save_evidence <name>         stdin -> raw/<name> in the report
 #   aot_usage <name> <cmd...>    run AOT_USAGE_SCRIPT via <cmd...>; sets CACHED, TOTAL, AOT_VERDICT; saves evidence
 #   finish                       in the process that called report_init: render report.md/results.json, print summary
@@ -229,32 +229,41 @@ print_timing_table() {
   jq -e 'any(.results[]; .kind == "timing")' "$1" >/dev/null || return 0
   local heading="Startup times"
   jq -e 'any(.results[]; .kind == "timing" and .metric != null)' "$1" >/dev/null && heading="Timings"
-  printf '\n%s== %s%s %s(median of each scenario'"'"'s runs; each row is compared with the scenario named under "compared with")%s\n' \
-    "$C_BOLD" "$heading" "$C_RESET" "$C_DIM" "$C_RESET"
+  local explain='each row is compared with the scenario named under "compared with"'
+  # With fixed comparison columns (timings.columns in expectations.json) every row has the same baselines
+  jq -e 'any(.results[]; .comparisons != null)' "$1" >/dev/null && explain='every row vs the same baselines; * = the comparison its outcome is judged on'
+  printf '\n%s== %s%s %s(median of each scenario'"'"'s runs; %s)%s\n' "$C_BOLD" "$heading" "$C_RESET" "$C_DIM" "$explain" "$C_RESET"
   jq -r '
     def secs: if . == null then "-" else "\(.)s" end;
     [.results[] | select(.kind == "timing")] as $t
     | ($t | any(.aotCache != null)) as $cache
-    | (["scenario"] + (if $cache then ["JDK AOT cache"] else [] end) + ["runs (s)", "median", "compared with", "change", "outcome"] | join("\t")),
+    | ($t | any(.unit == "ms")) as $mixed
+    | ($t | map(.comparisons // []) | max_by(length) | map(.label)) as $cols
+    | (["scenario"] + (if $cache then ["JDK AOT cache"] else [] end) + [if $mixed then "runs" else "runs (s)" end, "median"]
+        + (if ($cols | length) > 0 then $cols else ["compared with", "change"] end) + ["outcome"] | join("\t")),
       ($t[] | [.short]
         + (if $cache then [if .aotCache then "\(.aotCache.verdict) \(.aotCache.classes // "")" else "-" end] else [] end)
-        + [(.runs | map(if . == null then "fail" else tostring end) | join(" ")),
-           (.median | secs),
-           (.compareToLabel // "-"),
-           (if .referenceMedian then "\(.change) vs \(.referenceMedian)s" else "-" end),
-           (if .outcome == "info" then (if .compareTo then "info" else "reference" end) else .outcome end)]
+        # .shown is missing in results.json files rendered before it existed
+        + [((.shown.runs // (.runs | map(if . == null then "fail" else tostring end))) | join(" ")) + (if $mixed then " \(.unit)" else "" end),
+           (.shown.median // (.median | secs))]
+        + (if ($cols | length) > 0 then
+             [.comparisons // [] | .[] | if .ref == null then "-" else
+                "\(.change)\(if .otherRef then " (vs \(.refLabel))" else "" end)\(if .judged then " *" else "" end)" end]
+           else
+             [(.compareToLabel // "-"), (if .referenceMedian then "\(.change) vs \(.referenceMedian)s" else "-" end)]
+           end)
+        + [(if .baseline or (.outcome == "info" and .compareTo == null) then "baseline" else .outcome end)]
         | join("\t"))' "$1" \
   | column -t -s $'\t' \
   | sed -e "1s/.*/${C_BOLD}&${C_RESET}/" \
         -e "s/ improved\$/ ${C_GREEN}improved${C_RESET}/" -e "s/ unchanged\$/ ${C_GREEN}unchanged${C_RESET}/" \
         -e "s/ no-benefit-expected\$/ ${C_YELLOW}no-benefit-expected${C_RESET}/" -e "s/ inconclusive\$/ ${C_YELLOW}inconclusive${C_RESET}/" \
         -e "s/ unexpected\$/ ${C_RED}unexpected${C_RESET}/" -e "s/ info\$/ ${C_DIM}info${C_RESET}/" \
-        -e "s/ reference\$/ ${C_DIM}reference${C_RESET}/" \
+        -e "s/ baseline\$/ ${C_DIM}baseline${C_RESET}/" \
         -e 's/^/  /'
-  jq -r 'if .attribution then
-      "\n  Where the gain comes from: neither \(.attribution.neither)s → Spring AOT only \(.attribution.springAotOnly)s → Spring AOT + JDK AOT cache \(.attribution.full)s",
-      "  Spring AOT saved \(.attribution.springAotSaved)s (\(.attribution.springAotShare // "?")% of the gain), the JDK AOT cache \(.attribution.aotCacheSaved)s (\(.attribution.aotCacheShare // "?")%)"
-    else empty end' "$1"
+  local attribution
+  attribution=$(jq -r '.attribution.summary // empty' "$1")
+  if [[ -n "$attribution" ]]; then echo; fold -s -w 116 <<<"$attribution" | sed -e 's/ *$//' -e 's/^/  /'; fi
 }
 
 # ---------------------------------------------------------------------------------------------------- timing and the AOT cache

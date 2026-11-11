@@ -20,7 +20,7 @@ make demo              # = scripts/demo.sh: build, start infra + four envs, veri
 make start             # build the image, start infra, bootstrap credentials, start the four environments
 make verify            # per env: profiles, config source, secrets, Mongo, data isolation; same image everywhere
 make aot-check         # which envs' JVMs used the AOT cache (dev2 runs ZGC on purpose: falls back)
-make startup-compare   # Spring AOT + JDK AOT cache vs Spring AOT only vs neither
+make startup-compare   # prod1 startup four ways: Spring AOT and the JDK AOT cache, each on or off
 make fail-fast-demo    # startup refuses to run when Config Server/Vault are unreachable or the token is wrong
 make report ENV=prod1  # an env's startup report
 make logs              # fzf picker over every running container (or ENV=dev1)
@@ -54,11 +54,26 @@ Where the values come from:
 
 `make startup-compare` (prod1, real Config Server/Vault/Mongo; Spring's "Started … in"):
 
-| Mode | Typical startup |
-|---|---|
-| Spring AOT + JDK AOT cache (default) | ~0.5 s |
-| Spring AOT only | ~1.2 s |
-| Neither | ~1.5 s |
+```
+scenario                                     JDK AOT cache        runs (s)           median  vs Plain JVM - No Cache  outcome
+prod1: Spring AOT + JDK AOT cache (default)  USED 10995/11611     0.469 0.42 0.416   0.42s   3.3× faster *            improved
+prod1: JDK AOT cache only                    USED 10995/12490     0.694 0.658 0.725  0.694s  2× faster                info
+prod1: Spring AOT only                       not used 1461/11302  1.041 1.053 1.067  1.053s  -24%                     info
+prod1: Plain JVM - No Cache                  not used 1461/11609  1.43 1.391 1.299   1.391s  -                        baseline
+
+Where the gain comes from (median startup, compared with the Plain JVM - No Cache at 1.391s): Spring AOT alone
+saves 0.338s, the JDK AOT cache alone saves 0.697s, and both together save 0.971s (each alone adds up to 1.035s).
+```
+
+- All four combinations of Spring AOT and the JDK AOT cache (on or off each) are timed, so what each one saves on
+  its own is measured, not inferred from the order they're added in.
+- **JDK AOT cache**: classes loaded from a cache, counted in one extra start per row. The ~1,460 in the two "off"
+  rows come from the JDK's own default class archive (CDS), which every JVM uses, not from the app's cache.
+- **vs Plain JVM - No Cache**: every row against the same image with neither Spring AOT nor the JDK AOT cache.
+  Only the default row is judged (`*`); the two "only" rows are information (Spring AOT alone is ~15-25% faster,
+  at or inside the ±25% noise band).
+- Without Spring AOT the cache is still used, but Spring loads ~850 more classes to process the configuration at
+  startup, and those aren't in the cache.
 
 `make aot-check`: prod1, dev1 and qa1 load ~11,000 of ~11,650 classes from the cache; dev2 (ZGC) loads 0 and still starts.
 
@@ -66,7 +81,7 @@ Where the values come from:
 
 `make demo` writes `reports/05-all-together/<run>/report.md` (for people) and `results.json` (for scripts and agents), plus the
 evidence in `raw/`. The terminal ends with the verdict, the answer, and what improved, what didn't and what was
-unexpected. PASS means every environment verified (`works`), the JDK AOT cache was used everywhere except dev2/ZGC (`no-benefit-expected`), and Spring AOT + the cache started prod1 faster than neither (`improved`). The report also splits the gain between Spring AOT and the AOT cache. What each outcome means and how timings are judged: [docs/reading-reports.md](../../docs/reading-reports.md).
+unexpected. PASS means every environment verified (`works`), the JDK AOT cache was used everywhere except dev2/ZGC (`no-benefit-expected`), and Spring AOT + the cache started prod1 faster than the Plain JVM - No Cache (`improved`). The report also shows what Spring AOT and the JDK AOT cache each save on their own, and together. What each outcome means and how timings are judged: [docs/reading-reports.md](../../docs/reading-reports.md).
 The labels, expected values and explanations come from [`expectations.json`](expectations.json).
 
 ## Code

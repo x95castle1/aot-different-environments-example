@@ -37,7 +37,7 @@ build: check-jdk ## Build locally, incl. Spring AOT processing (no services need
 
 # ---------------------------------------------------------------------------------------------------- this example
 
-RUNS ?= 3
+RUNS ?= 5
 
 .PHONY: demo
 demo: ## Train with the workload, time all three images in dev1, run the trained image as dev1 + prod1, report

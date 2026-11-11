@@ -18,7 +18,7 @@ ROOT=$(cd ../.. && pwd)
 . "$ROOT/scripts/lib.sh"
 require jq curl
 
-RUNS=${RUNS:-3}
+RUNS=${RUNS:-5}                      # 5, so one slow outlier start can't move the median
 WARMUP_REQUESTS=${WARMUP_REQUESTS:-300}
 EARLY_REQUESTS=50                    # the "first 50 requests" timing
 export RUNS

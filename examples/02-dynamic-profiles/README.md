@@ -10,7 +10,7 @@ Spring AOT runs at build time; does that freeze the profiles?
 - **Silently frozen:** `@Profile` and `@ConditionalOnProperty` beans. They were evaluated during the build, when no
   profile was active. This demo shows that side by side with Spring AOT switched off.
 - **Startup doesn't suffer:** every environment uses the same JDK AOT cache (trained with no profile active) and
-  starts as fast as prod1. Spring AOT itself makes startup ~1.6× faster than the same image with it off.
+  starts as fast as prod1. Spring AOT itself makes startup ~1.7× faster than the same image with it off.
 
 No external services needed.
 
@@ -56,17 +56,18 @@ prod1 without Spring AOT   off        prod,prod1        orders_prod1  PagerNotif
 Then each instance is started again on its own, `RUNS` times, and the run ends with this table and the verdict:
 
 ```
-  Two different AOTs in the table below: "JDK AOT cache" pre-loads classes and is on for every row;
-  "without Spring AOT" means no build-time bean code, so prod1 vs that row is what Spring AOT alone is worth.
+  Two different AOTs in the table below: the "JDK AOT cache" pre-loads classes and is on for every row;
+  Spring AOT (build-time bean code) is on for every row except "prod1 without Spring AOT", so the
+  "vs no Spring AOT" column is what Spring AOT alone is worth for each environment.
 
-== Startup times (median of each scenario's runs; each row is compared with the scenario named under "compared with")
-  scenario                  JDK AOT cache   runs (s)                       median  compared with             change                 outcome
-  dev1                      USED 7515/7698  0.364 0.34 0.377 0.359 0.362   0.362s  prod1                     +6% vs 0.342s          unchanged
-  dev2                      USED 7515/7719  0.4 0.362 0.357 0.398 0.337    0.362s  prod1                     +6% vs 0.342s          unchanged
-  qa1                       USED 7515/7678  0.362 0.384 0.339 0.358 0.331  0.358s  prod1                     +5% vs 0.342s          unchanged
-  prod1                     USED 7515/7707  0.353 0.333 0.342 0.342 0.345  0.342s  prod1 without Spring AOT  1.6× faster vs 0.551s  improved
-  prod1 + debug profile     USED 7515/7724  0.354 0.351 0.349 0.35 0.373   0.351s  prod1                     +3% vs 0.342s          unchanged
-  prod1 without Spring AOT  USED 7515/8357  0.548 0.574 0.548 0.559 0.551  0.551s  -                         -                      reference
+== Startup times (median of each scenario's runs; every row vs the same baselines; * = the comparison its outcome is judged on)
+  scenario                  JDK AOT cache   runs (s)                       median  vs no Spring AOT  vs prod1  outcome
+  dev1                      USED 7558/7717  0.243 0.236 0.249 0.24 0.245   0.243s  1.8× faster       +1% *     unchanged
+  dev2                      USED 7558/7719  0.237 0.313 0.252 0.244 0.244  0.244s  1.8× faster       +2% *     unchanged
+  qa1                       USED 7558/7718  0.242 0.238 0.243 0.244 0.246  0.243s  1.8× faster       +1% *     unchanged
+  prod1                     USED 7558/7720  0.242 0.237 0.24 0.245 0.237   0.24s   1.8× faster *     -         improved
+  prod1 + debug profile     USED 7558/7723  0.241 0.24 0.242 0.277 0.244   0.242s  1.8× faster       +1% *     unchanged
+  prod1 without Spring AOT  USED 7558/8397  0.429 0.426 0.479 0.426 0.436  0.429s  -                 -         baseline
 ```
 
 There are two different AOTs here, and only one of them changes:
@@ -74,14 +75,18 @@ There are two different AOTs here, and only one of them changes:
   row; the column shows whether the JVM used it and how many of the loaded classes came from it.
 - **Spring AOT**: bean definitions generated as code at build time. Only the last row runs without it.
 
-- **compared with / change**: every environment is judged against prod1 (do profiles cost startup time?), and prod1
-  against prod1 without Spring AOT (what Spring AOT alone is worth, since both rows use the same JDK AOT cache).
+Every row is compared with the same two baselines:
+- **vs no Spring AOT**: how much faster this environment starts than prod1 without Spring AOT. Both use the same
+  JDK AOT cache, so this is what Spring AOT alone is worth, and every environment gets it, not only prod1.
+- **vs prod1**: did this environment's profiles cost startup time compared with prod1?
+- **\***: the comparison the outcome is judged on: prod1 on vs no Spring AOT (Spring AOT must help), every other
+  environment on vs prod1 (profiles must cost nothing).
 
 Reading it:
-- The cache was trained with no profile active, yet every environment loads the same ~7,500 classes from it. Profiles
+- The cache was trained with no profile active, yet every environment loads the same ~7,550 classes from it. Profiles
   only change which config files Spring reads, not the JDK, classpath or JVM flags the cache depends on.
 - Without Spring AOT, the JDK AOT cache is still used, but Spring loads ~650 extra classes to process the
-  configuration at startup and evaluates every condition again. That's the ~1.6× Spring AOT buys, in exchange for
+  configuration at startup and evaluates every condition again. That's the ~1.7× Spring AOT buys, in exchange for
   the frozen bean graph above.
 
 ## Reading the report

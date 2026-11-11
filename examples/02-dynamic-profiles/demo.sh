@@ -133,8 +133,9 @@ time_instances() {
   done < <(instances)
 
   echo
-  note "  Two different AOTs in the table below: \"JDK AOT cache\" pre-loads classes and is on for every row;"
-  note "  \"without Spring AOT\" means no build-time bean code, so prod1 vs that row is what Spring AOT alone is worth."
+  note "  Two different AOTs in the table below: the \"JDK AOT cache\" pre-loads classes and is on for every row;"
+  note "  Spring AOT (build-time bean code) is on for every row except \"prod1 without Spring AOT\", so the"
+  note "  \"vs no Spring AOT\" column is what Spring AOT alone is worth for each environment."
 }
 
 # time_instance <id> <name> <env> <index> <SPRING_PROFILES_ACTIVE> <aot>: classes from the AOT cache, then RUNS starts

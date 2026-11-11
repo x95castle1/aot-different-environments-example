@@ -34,6 +34,6 @@ Full guide: [docs/reading-reports.md](docs/reading-reports.md).
 
 ## Change the interpretation, not the measurement
 
-What a report says (labels, expected values, explanations, hints, timing references and noise bands) lives in
+What a report says (labels, expected values, explanations, hints, timing baselines and noise bands) lives in
 `examples/<example>/expectations.json`. The `demo.sh` scripts only measure and call `expect` / `record_timing`
 (see `scripts/lib.sh`). Rendering: `scripts/report.jq` (judging) and `scripts/report-md.jq` (Markdown).

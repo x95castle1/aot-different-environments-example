@@ -8,11 +8,13 @@ def spread: sort | (if length >= 3 then .[0:-1] else . end) | if length == 0 or 
 def r3: if . == null then null else (. * 1000 | round) / 1000 end;
 def r2: if . == null then null else (. * 100 | round) / 100 end;
 def r1: if . == null then null else (. * 10 | round) / 10 end;
+# t($unit): a duration in seconds as shown in the report ("0.439s", or "28 ms" for unit "ms")
+def t($unit): if . == null then "-" elif $unit == "ms" then "\(. * 1000 | round) ms" else "\(. | r3)s" end;
 def change($ratio):
   if $ratio == null then ""
   elif $ratio <= 0.67 then "\((1 / $ratio) | r1)× faster"
   elif $ratio >= 1.5 then "\($ratio | r1)× slower"
-  else (((($ratio - 1) * 100) | round) as $p | if $p >= 0 then "+\($p)%" else "\($p)%" end) end;
+  else (((($ratio - 1) * 100) | round) as $p | if $p == 0 then "±0%" elif $p > 0 then "+\($p)%" else "\($p)%" end) end;
 
 $exp[0] as $e
 | $run[0] as $r
@@ -33,38 +35,58 @@ $exp[0] as $e
     | {id, runs: .runs, ok: $ok, min: ($ok | min), median: ($ok | median), max: ($ok | max), spread: ($ok | spread)} ] as $stats
 | ($stats | map({key: .id, value: .}) | from_entries) as $S
 
-# ---- judge each timing against its reference
+# ---- judge each timing against its baseline (compareTo)
 | [ $stats[] | . as $s
     | ($e.timings.scenarios[$s.id] // {}) as $rule
-    | ($rule.expect // "info") as $want
+    # "reference" is the old name of "baseline"; both mean: shown for comparison, not judged
+    | ($rule.expect // "info" | if . == "reference" then "baseline" else . end) as $want
+    | ($rule.unit // "s") as $unit
     | (if $rule.compareTo then $S[$rule.compareTo] else null end) as $ref
     | ($rule.band // $band0) as $band
     | (if $ref != null and $ref.median != null and $s.median != null then $s.median / $ref.median else null end) as $ratio
     | (if ($s.ok | length) == 0 then "unexpected"
-       elif $want == "info" or $want == "reference" then "info"
+       elif $want == "info" or $want == "baseline" then "info"
        elif $ratio == null then "unexpected"
        # Too few runs to tell noise from a real difference
        elif ($s.ok | length) < $minRuns or ($ref.ok | length) < $minRuns then "inconclusive"
        elif (($s.spread // 1) > $maxSpread) or (($ref.spread // 1) > $maxSpread) then "inconclusive"
        elif $want == "improved" then (if $ratio <= 1 - $band then "improved" else "unexpected" end)
-       # Faster than its reference is still "unchanged": this scenario isn't meant to beat it, so it's noise.
+       # Faster than its baseline is still "unchanged": this scenario isn't meant to beat it, so it's noise.
        elif $want == "unchanged" then (if $ratio > 1 + $band then "unexpected" else "unchanged" end)
        elif $want == "no-benefit-expected" then (if $ratio >= 1 - $band then "no-benefit-expected" else "unexpected" end)
        else "unexpected" end) as $outcome
+    # Optional fixed comparison columns (timings.columns): every row vs the same baselines, for the table only.
+    # The outcome above is still judged on compareTo; "judged" marks the column that matches it.
+    # A column's default "*.<x>" means the row's own group: for row "first.workload", "*.untrained" is "first.untrained".
+    # Baseline rows get no comparisons: they are what the others are compared with.
+    | [ ($e.timings.columns // [])[] as $c
+        | ($c.default // null | if . != null and startswith("*.") then ($s.id | sub("\\.[^.]*$"; "")) + ltrimstr("*") else . end) as $cdefault
+        | (if ($c.scenarios // {}) | has($s.id) then $c.scenarios[$s.id] else $cdefault end) as $cref
+        | ($S[$cref // ""].median // null) as $cmed
+        | if $want == "baseline" or $cref == null or $cref == $s.id or $cmed == null or $s.median == null then {label: $c.label, ref: null}
+          else ($s.median / $cmed) as $cr
+            | {label: $c.label, ref: $cref, refLabel: (tlabel($cref) | sub(" \\((reference|baseline)\\)$"; "")), refMedian: ($cmed | r3), ratio: ($cr | r3),
+               change: change($cr), detail: "(\($s.median | t($unit)) vs \($cmed | t($unit)))",
+               otherRef: ($cref != $cdefault), judged: ($cref == $rule.compareTo and ($want | IN("info", "baseline") | not))} end ] as $comparisons
     | ($rule.metric // null) as $metric
     | {kind: "timing", id: $s.id, subject: null, group: ($metric // "Startup time"), metric: $metric,
-       label: (if $metric then "\(tlabel($s.id)) · \($metric)" else "\(tlabel($s.id)): startup time" end),
-       short: (if $metric then "\(tlabel($s.id)) · \($metric)" else tlabel($s.id) end),
+       # Metric first, so rows grouped by metric read as "first request · untrained", "first request · workload-trained"
+       label: (if $metric then "\($metric) · \(tlabel($s.id))" else "\(tlabel($s.id)): startup time" end),
+       short: (if $metric then "\($metric) · \(tlabel($s.id))" else tlabel($s.id) end),
+       baseline: ($want == "baseline"), unit: $unit,
+       shown: {median: ($s.median | t($unit)),
+               runs: ($s.runs | map(if . == null then "fail" elif $unit == "ms" then "\(. * 10000 | round / 10)" else tostring end))},
        runs: $s.runs, min: ($s.min | r3), median: ($s.median | r3), max: ($s.max | r3), spread: ($s.spread | r2),
        compareTo: ($rule.compareTo // null),
        compareToLabel: (if $rule.compareTo then tlabel($rule.compareTo) else null end),
        referenceMedian: ($ref.median | r3), ratio: ($ratio | r3), change: change($ratio), band: $band,
-       expected: (if $want == "info" or $want == "reference" then null
+       comparisons: (if ($comparisons | length) > 0 then $comparisons else null end),
+       expected: (if $want == "info" or $want == "baseline" then null
                   elif $rule.compareTo then "\($want) vs \(tlabel($rule.compareTo)) (±\(($band * 100) | round)% band)"
                   else $want end),
        measured: (if $s.median == null then "did not start"
-                  elif $ratio == null then "median \($s.median | r3)s"
-                  else "median \($s.median | r3)s vs \(tlabel($rule.compareTo)) \($ref.median | r3)s (\(change($ratio)))" end
+                  elif $ratio == null then "median \($s.median | t($unit))"
+                  else "median \($s.median | t($unit)) vs \(tlabel($rule.compareTo)) \($ref.median | t($unit)) (\(change($ratio)))" end
                   + (if $outcome != "inconclusive" then ""
                      elif ($s.ok | length) < $minRuns or ($ref.ok | length) < $minRuns then ", only \([($s.ok | length), ($ref.ok | length)] | min) run(s); at least \($minRuns) needed to judge"
                      else ", runs vary \(($s.spread // 0) | r1)×" end)),
@@ -73,17 +95,21 @@ $exp[0] as $e
        ifUnexpected: ($rule.ifUnexpected // ["Was something else running? Check `make status`, then rerun.",
                                              "Rerun with more runs, e.g. RUNS=10."]),
        aotCache: ($cacheBy[$s.id] // null),
-       evidence: null, evidenceExcerpt: null} ] as $timingResults
+       evidence: null, evidenceExcerpt: null} ]
+  # Rows in the order expectations.json lists them (e.g. grouped by metric), not the order they were recorded in
+  | (($e.timings.scenarios // {}) | keys_unsorted) as $order
+  | sort_by(.id as $id | ($order | index($id)) // 1e9) as $timingResults
 
-# ---- attribution: how much of the gain comes from Spring AOT vs the JDK AOT cache
+# ---- attribution: what Spring AOT and the JDK AOT cache each save on their own, and together. All four
+# combinations are measured, so nothing depends on which one is "added first".
 | (($e.attribution // null) as $a
    | if $a == null then null else
-       ($S[$a.full].median) as $f | ($S[$a.springAotOnly].median) as $o | ($S[$a.neither].median) as $n
-       | if $f == null or $o == null or $n == null then null else
-           {neither: ($n | r3), springAotOnly: ($o | r3), full: ($f | r3),
-            totalSaved: (($n - $f) | r3), springAotSaved: (($n - $o) | r3), aotCacheSaved: (($o - $f) | r3),
-            springAotShare: (if $n - $f > 0 then ((($n - $o) / ($n - $f) * 100) | round) else null end),
-            aotCacheShare: (if $n - $f > 0 then ((($o - $f) / ($n - $f) * 100) | round) else null end)} end end) as $attribution
+       ($S[$a.full].median) as $f | ($S[$a.springAotOnly].median) as $o | ($S[$a.cacheOnly].median) as $c | ($S[$a.neither].median) as $n
+       | if $f == null or $o == null or $c == null or $n == null then null else
+           {neither: ($n | r3), springAotOnly: ($o | r3), cacheOnly: ($c | r3), full: ($f | r3),
+            springAotSaved: (($n - $o) | r3), aotCacheSaved: (($n - $c) | r3), totalSaved: (($n - $f) | r3),
+            sumOfEachAlone: ((($n - $o) + ($n - $c)) | r3)}
+           | . + {summary: "Where the gain comes from (median startup, compared with the Plain JVM - No Cache at \(.neither)s): Spring AOT alone saves \(.springAotSaved)s, the JDK AOT cache alone saves \(.aotCacheSaved)s, and both together save \(.totalSaved)s (each alone adds up to \(.sumOfEachAlone)s)."} end end) as $attribution
 
 | ($checks + $timingResults) as $all
 | ($all | map(.outcome)) as $outcomes

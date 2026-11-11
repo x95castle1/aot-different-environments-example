@@ -73,7 +73,7 @@ aot-check: ## Which envs' JVMs used the JDK AOT cache (prod/dev1/qa1: yes, dev2/
 	./scripts/aot-check.sh
 
 .PHONY: startup-compare
-startup-compare: ## Startup time: JDK AOT cache + Spring AOT vs Spring AOT only vs neither
+startup-compare: ## prod1 startup four ways: Spring AOT and the JDK AOT cache, each on or off
 	./scripts/startup-compare.sh
 
 .PHONY: fail-fast-demo

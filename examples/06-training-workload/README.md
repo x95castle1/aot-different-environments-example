@@ -185,26 +185,39 @@ curl -s localhost:8603/info/runtime | jq   # prod1's profiles, Config Server fil
 In CI these are the steps of one job: build, start the training stack (or use CI service containers), run the
 trainer, drive the workload, stop, copy the cache, build, push. Promote the final image by digest (example 04).
 
-## What you'll see (Apple Silicon, Docker Desktop, JDK 25, 3 runs)
+## What you'll see (Apple Silicon, Docker Desktop, JDK 25, 5 runs)
 
 ```
-== Classes loaded during startup + 300 requests: from the AOT cache vs from the jars
-  untrained          13575 classes loaded,      0 from the AOT cache, 13575 from the jars
-  context-trained    13834 classes loaded,  11676 from the AOT cache,  2158 from the jars
-  workload-trained   13948 classes loaded,  13634 from the AOT cache,   314 from the jars
+== Classes loaded in dev1 during startup + 300 requests: from the AOT cache vs from the jars
+  untrained          13581 classes loaded,      0 from the AOT cache, 13581 from the jars
+  context-trained    13845 classes loaded,  11685 from the AOT cache,  2160 from the jars
+  workload-trained   13957 classes loaded,  13641 from the AOT cache,   316 from the jars
 
-== Timings
-  scenario                               median  compared with    change                 outcome
-  context-trained · startup time         0.414s  untrained        2.8× faster vs 1.164s  improved
-  workload-trained · startup time        0.389s  context-trained  -6% vs 0.414s          unchanged
-  workload-trained · first request       0.025s  context-trained  2.3× faster vs 0.059s  improved
-  workload-trained · first 50 requests   0.17s   context-trained  1.6× faster vs 0.269s  info
-  workload-trained · first 300 requests  0.653s  context-trained  -21% vs 0.822s         improved
+== Timings (median of each scenario's runs; every row vs the same baselines; * = the comparison its outcome is judged on)
+  scenario                               runs                             median  vs untrained   vs context-trained  outcome
+  startup time · untrained               1.171 1.112 1.197 1.094 1.114 s  1.114s  -              -                   baseline
+  startup time · context-trained         0.452 0.521 0.467 0.47 0.443 s   0.467s  2.4× faster *  -                   improved
+  startup time · workload-trained        0.424 0.44 0.389 0.411 0.416 s   0.416s  2.7× faster    -11% *              unchanged
+  first request · untrained              63.9 62.2 62 60.8 59.3 ms        62 ms   -              -                   baseline
+  first request · context-trained        50.1 57 53.2 53.9 97.1 ms        54 ms   -13%           -                   info
+  first request · workload-trained       27.7 26.9 27.2 28.3 26.4 ms      27 ms   2.3× faster    2× faster *         improved
+  first 50 requests · untrained          0.233 0.254 0.247 0.262 0.217 s  0.247s  -              -                   baseline
+  first 50 requests · context-trained    0.211 0.224 0.257 0.211 0.278 s  0.224s  -9%            -                   info
+  first 50 requests · workload-trained   0.173 0.171 0.185 0.159 0.160 s  0.171s  -31%           -24%                info
+  first 300 requests · untrained         0.746 0.725 0.742 0.694 0.691 s  0.725s  -              -                   baseline
+  first 300 requests · context-trained   0.748 0.735 0.881 0.681 0.768 s  0.748s  +3%            -                   info
+  first 300 requests · workload-trained  0.559 0.588 0.592 0.505 0.522 s  0.559s  -23%           -25% *              improved
 ```
 
-- **Startup** is the same with either cache. The workload cache holds more, but startup isn't slower.
+- Rows are grouped by what's measured; within each group, every row is compared with the same two baselines:
+  - **vs untrained**: what each cache is worth compared with no cache at all;
+  - **vs context-trained**: what workload training adds on top of the startup-only cache;
+  - **\***: the comparison the outcome is judged on. The other rows are information only.
+- **Startup** is the same with either cache (both ~2.5× faster than untrained). The workload cache holds more, but
+  startup isn't slower.
 - **The first request** is over 2× faster. The startup-only cache leaves ~2,150 request-path classes to be loaded
-  from the jars on the first requests; the workload cache leaves ~300.
+  from the jars on the first requests; the workload cache leaves ~300. The context-trained cache barely helps here
+  (vs untrained), because it never saw a request.
 - **Warm-up**, across five runs on this machine:
   - **first request**: 2.1–2.8× faster every time (~30 ms saved). This is the reliable gain;
   - **first 300 requests**: 13–21% faster, or more (judged with a ±10% band);

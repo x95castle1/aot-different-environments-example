@@ -121,6 +121,16 @@
     }
   },
   "timings": {
+    "columns": [
+      {
+        "label": "vs no Spring AOT",
+        "default": "prod1-no-spring-aot"
+      },
+      {
+        "label": "vs prod1",
+        "default": "prod1"
+      }
+    ],
     "scenarios": {
       "dev1": {
         "label": "dev1", "compareTo": "prod1", "expect": "unchanged",
@@ -147,8 +157,8 @@
         "why": "An operator-added profile is one more config file to read: no measurable cost."
       },
       "prod1-no-spring-aot": {
-        "label": "prod1 without Spring AOT", "expect": "reference",
-        "why": "Reference: prod1 from the same image, still with the JDK AOT cache, but without Spring AOT's generated bean code."
+        "label": "prod1 without Spring AOT", "expect": "baseline",
+        "why": "Baseline: prod1 from the same image, still with the JDK AOT cache, but without Spring AOT's generated bean code."
       }
     }
   },

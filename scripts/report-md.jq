@@ -1,5 +1,6 @@
 # Renders report.md from results.json (jq -r -f scripts/report-md.jq results.json).
 
+def t($unit): if . == null then "-" elif $unit == "ms" then "\(. * 1000 | round) ms" else "\(.)s" end;
 def cell: tostring | gsub("\\|"; "\\|") | gsub("\n"; " ");
 def bt: "`\(. | tostring | gsub("`"; "'"))`";
 def evidence_block:
@@ -52,7 +53,7 @@ def section($title; $items; $none):
   (if ($timings | length) > 0 then
      section("What improved"; $improved; "Nothing measured as improved."),
      (if $R.attribution then
-        "Where the gain comes from (median startup): neither \($R.attribution.neither)s → Spring AOT only \($R.attribution.springAotOnly)s → Spring AOT + JDK AOT cache \($R.attribution.full)s. Spring AOT saved \($R.attribution.springAotSaved)s (\($R.attribution.springAotShare // "?")% of the gain), the JDK AOT cache \($R.attribution.aotCacheSaved)s (\($R.attribution.aotCacheShare // "?")%).",
+        $R.attribution.summary,
         ""
       else empty end),
      (if ($unchanged | length) > 0 or $perf then section("Stayed the same (as intended)"; $unchanged; "Nothing in this category.") else empty end)
@@ -89,14 +90,36 @@ def section($title; $items; $none):
      ($inconclusive[] | "- **\(.label)**: \(.measured)"), ""
    else empty end),
   (if ($info | length) > 0 then
-     "## Measurements and references (information only)", "",
+     (if any($info[]; .baseline == true) then "## Measurements and baselines (information only)" else "## Measurements (information only)" end), "",
      ($info[] | "- \(.label): \(.measured)" + (if .why != "" then " (\(.why))" else "" end)), ""
    else empty end),
   (if ($timings | length) > 0 then
      (if any($timings[]; .metric != null) then "## Timings" else "## Startup times" end), "",
-     "| Scenario | JDK AOT cache | Runs (s) | Median | Compared with | Change | Outcome |",
-     "|---|---|---|---|---|---|---|",
-     ($timings[] | "| \(.short | cell) | \(if .aotCache then "\(.aotCache.verdict) \(.aotCache.classes // "")" else "-" end) | \(.runs | map(if . == null then "fail" else tostring end) | join(", ")) | \(.median // "-")s | \((.compareToLabel // "-") | cell) | \(if .referenceMedian then "\(.change) (\(.median)s vs \(.referenceMedian)s)" else "-" end) | \(.outcome) |"),
+     ($timings | map(.comparisons // []) | max_by(length) | map(.label)) as $cols
+     | ($timings | any(.aotCache != null)) as $hasCache
+     # Mixed units (s and ms): the unit goes into every runs cell instead of the header
+     | ($timings | any(.unit == "ms")) as $mixed
+     | def cache: if $hasCache then [if .aotCache then "\(.aotCache.verdict) \(.aotCache.classes // "")" else "-" end] else [] end;
+       def runs: (.shown.runs | join(", ")) + (if $mixed then " \(.unit)" else "" end);
+       # Baseline rows are information in results.json; the table names them for what they are
+       def outcome: if .baseline or (.outcome == "info" and .compareTo == null) then "baseline" else .outcome end;
+       def row($cells): "| " + ($cells | map(cell) | join(" | ")) + " |";
+       def head: ["Scenario"] + (if $hasCache then ["JDK AOT cache"] else [] end) + [if $mixed then "Runs" else "Runs (s)" end, "Median"];
+     if ($cols | length) > 0 then
+       # Fixed comparison columns: every row against the same baselines; * marks the one the outcome is judged on
+       "Every row is compared with the same baselines. \\* marks the comparison its outcome is judged on.", "",
+       row(head + $cols + ["Outcome"]),
+       row(head + $cols + ["Outcome"] | map("---")),
+       ($timings[] | row([.short] + cache + [runs, .shown.median]
+           + [.comparisons // [] | .[] | if .ref == null then "-" else
+                "\(.change)\(if .otherRef then " vs \(.refLabel)" else "" end) \(.detail)\(if .judged then " \\*" else "" end)" end]
+           + [outcome]))
+     else
+       row(head + ["Compared with", "Change", "Outcome"]),
+       row(head + ["Compared with", "Change", "Outcome"] | map("---")),
+       ($timings[] | row([.short] + cache + [runs, .shown.median, (.compareToLabel // "-"),
+           (if .referenceMedian then "\(.change) (\(.shown.median) vs \(.unit as $u | .referenceMedian | t($u // "s")))" else "-" end), outcome]))
+     end,
      ""
    else empty end),
   "## All checks",
