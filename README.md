@@ -88,10 +88,3 @@ Vault runs in dev mode (in-memory, root token `root`), so after `make stop` an e
 (automatically in `make demo`, or with `make start` / `make envs`). Mongo uses a fixed root password. Each example's
 `bootstrap.sh` stands in for the platform that issues per-environment credentials; it writes only Vault tokens to the
 example's `.secrets/` (git-ignored). The infrastructure publishes no host ports, so examples never clash.
-
-## Adding CyberArk later
-Add another `optional:` config-data import (a small `ConfigDataLocationResolver` + `ConfigDataLoader` calling the
-CyberArk/Conjur REST API) registered in `spring.factories`. Like Config Server and Vault, it then runs at every
-startup even with AOT, and slots into example 03. CyberArk's `conjur-sdk-springboot` (built on Spring Boot 2.7,
-hooks in through auto-configuration and bean registrars) isn't a fit, because AOT would freeze its registration at
-build time.
