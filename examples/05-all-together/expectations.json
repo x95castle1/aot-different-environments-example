@@ -3,6 +3,15 @@
   "title": "05 · All together",
   "kind": "mixed",
   "question": "All four at once: one image, four environments (dev1, dev2, qa1, prod1) with profiles decided at startup, config and secrets from Config Server and Vault, their own Mongo databases and their own JVM flags. Does it all work together, and what does it buy in startup time?",
+  "preview": {
+    "steps": [
+      "Start Config Server, Vault, Mongo and four environments from one image",
+      "Verify each: profiles, config, secrets, its own database and data",
+      "Check which environments used the AOT cache (dev2 runs ZGC on purpose)",
+      "Compare startup: Spring AOT + AOT cache vs Spring AOT only vs neither"
+    ],
+    "answer": "Yes: one image runs as four environments; Spring AOT + the AOT cache start prod1 about 3x faster."
+  },
   "answer": {
     "pass": "Yes. The same image ran as dev1, dev2, qa1 and prod1. Each got its own profiles, Config Server settings, Vault secrets and Mongo database, saw only its own data, and used its own JVM flags. dev1, qa1 and prod1 used the AOT cache; dev2 runs ZGC on purpose and fell back to a normal start, as expected on JDK 25. Against the real Config Server, Vault and Mongo, Spring AOT + the AOT cache started prod1 much faster than the same image with neither.",
     "fail": "Not as expected: at least one result differs from the known behaviour. See 'Unexpected results' for what differed and what to check.",

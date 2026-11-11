@@ -64,6 +64,38 @@ write_summary() {
   [[ "$(jq -r .verdict "$dir/summary.json")" != "FAIL" ]] || exit 1
 }
 
+# preview <example|all>: the picker's preview pane, from the "preview" block of the example's expectations.json:
+# the question, the demo's steps, the expected answer, and how its last run went. "all": one line per example.
+preview() {
+  local b=$'\033[1m' d=$'\033[2m' r=$'\033[0m'
+  if [[ "$1" == "all" ]]; then
+    printf '%sRuns every example in order%s, stopping everything first; one report each + a summary.\n\n' "$b" "$r"
+    local e
+    for e in "${EXAMPLES[@]}"; do
+      printf '%s%s%s\n  %s\n  %slast run: %s%s\n\n' "$b" "$(title "$e")" "$r" \
+        "$(jq -r '.preview.answer' "examples/$e/expectations.json")" "$d" "$(last_run "$e")" "$r"
+    done
+    return
+  fi
+  local exp="examples/$1/expectations.json"
+  printf '%s%s%s\n%s\n\n' "$b" "$(title "$1")" "$r" "$(jq -r '.question' "$exp")"
+  printf '%sSteps%s\n' "$b" "$r"
+  jq -r '.preview.steps | to_entries[] | "  \(.key + 1). \(.value)"' "$exp"
+  printf '\n%sExpected%s  %s\n' "$b" "$r" "$(jq -r '.preview.answer' "$exp")"
+  printf '%sLast run%s  %s\n\n' "$b" "$r" "$(last_run "$1")"
+  printf '%sDetails: examples/%s/README.md%s\n' "$d" "$1" "$r"
+}
+
+# last_run <example>: "PASS · 2m 23s · 2026-11-11 14:35 UTC" from reports/<example>/latest, or "not run yet"
+last_run() {
+  local dir="reports/$1/latest"
+  [[ -f "$dir/results.json" && -f "$dir/run.json" ]] || { echo "not run yet"; return; }
+  jq -rn --slurpfile res "$dir/results.json" --slurpfile run "$dir/run.json" '
+    ($run[0].started | fromdateiso8601) as $s | (($run[0].finished // $run[0].started) | fromdateiso8601) as $f
+    | (($f - $s) | floor) as $secs
+    | "\($res[0].verdict) · \(if $secs >= 60 then "\($secs / 60 | floor)m \($secs % 60)s" else "\($secs)s" end) · \($run[0].started | sub("T"; " ") | sub(":[0-9]{2}Z$"; " UTC"))"'
+}
+
 # ---------------------------------------------------------------------------------------------------- steps
 
 # pick_example: prints the chosen example (or "all"); nothing when cancelled
@@ -74,7 +106,7 @@ pick_example() {
             printf 'all\tRun every example in order (stops everything first)\n'; } )
   fzf --delimiter='\t' --with-nth=1,2 --prompt='example> ' \
       --header='Select an example to run (Enter = run, Esc = cancel)' \
-      --preview='if [ {1} = all ]; then echo "Runs, in order:"; ls -d examples/[0-9][0-9]-* | sed "s#examples/#  #"; else sed -n "1,45p" examples/{1}/README.md; fi' \
+      --preview="'$ROOT/scripts/examples.sh' --preview {1}" \
       --preview-window='right,60%,wrap' <<<"$menu" | cut -f1 || true
 }
 
@@ -103,6 +135,7 @@ run_all() {
 
 # ---------------------------------------------------------------------------------------------------- main
 
+if [[ "${1:-}" == "--preview" ]]; then preview "${2:-}"; exit; fi   # called by fzf for the preview pane
 choice=${1:-}
 if [[ -z "$choice" ]]; then choice=$(pick_example); fi
 [[ -n "$choice" ]] || exit 0

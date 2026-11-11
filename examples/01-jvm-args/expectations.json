@@ -3,6 +3,15 @@
   "title": "01 · JVM arguments vary per environment",
   "kind": "performance",
   "question": "JVM arguments vary from environment to environment (prod chosen as the workaround). Does that break the JVM AOT cache, and does startup suffer?",
+  "preview": {
+    "steps": [
+      "Build one image; its AOT cache is trained with the prod JVM flags",
+      "Start it with 10 different flag sets (heap, memory limit, 1 CPU, GCs, ...)",
+      "For each: was the AOT cache used, and how fast did Spring start?",
+      "Guardrail: ZGC + -XX:AOTMode=on must refuse to start"
+    ],
+    "answer": "No: compatible flags still use the cache and start as fast as prod; ZGC (JDK 25) falls back without it."
+  },
   "answer": {
     "pass": "No. The AOT cache was trained once, with the prod flags. Different heap sizes, a container memory limit, 1 CPU, extra system properties, GC logging and the Parallel GC all still used it and started as fast as prod (1 CPU is slower overall, but still faster than 1 CPU without the cache). Only ZGC, which the JDK 25 AOT cache doesn't support, fell back to a normal start, and -XX:AOTMode=on turns that fallback into a startup error.",
     "fail": "Not as expected: at least one result differs from the known behaviour. See 'Unexpected results' for what differed and what to check.",

@@ -68,7 +68,8 @@ run_scenarios() {
 run_scenario() {
   local id=$1 label=$2 flags=$3 dopts=$4
   step "$label"
-  note "  flags: ${flags:-<image default>} ${dopts}"
+  # No flags = JDK_JAVA_OPTIONS isn't overridden: the JVM runs with the image's default, the prod flags
+  note "  flags: ${flags:-${PROD}  (image default JDK_JAVA_OPTIONS, not overridden)} ${dopts}"
 
   set_opts "$flags" "$dopts"
   aot_usage "${id}.aot-cache.txt" docker run --rm ${OPTS[@]+"${OPTS[@]}"} --entrypoint sh "$IMAGE" -c

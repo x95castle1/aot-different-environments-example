@@ -62,7 +62,8 @@ Each example has an `expectations.json` next to its `demo.sh`. For every check i
 - `ifUnexpected`: the hints shown when the result doesn't match.
 
 It also holds the timing rules (reference, expectation, band), the question, and the answer for each verdict. To
-change what a report says, edit that file; the demo scripts only measure.
+change what a report says, edit that file; the demo scripts only measure. Its `preview` block (a few one-line
+`steps` and a one-sentence `answer`) is only for the `make examples` picker's preview pane, not the report.
 
 ## results.json schema
 

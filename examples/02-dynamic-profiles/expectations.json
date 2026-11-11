@@ -3,6 +3,16 @@
   "title": "02 · Active profiles decided per environment at startup",
   "kind": "mixed",
   "question": "The app has dynamic active profiles that vary by environment/index and can't be fixed at build time. Spring AOT runs at build time; does that freeze the profiles?",
+  "preview": {
+    "steps": [
+      "Build one image with Spring AOT",
+      "Start it as dev1, dev2, qa1, prod1 (+ prod1 with a debug profile, + without Spring AOT)",
+      "Check each one's profiles, profile-file values and @Bean-method choice",
+      "Show the pitfall: @Profile / @ConditionalOnProperty beans are frozen at build time",
+      "Time each instance's startup"
+    ],
+    "answer": "Profiles and values are decided at startup; only @Profile / @ConditionalOnProperty beans are frozen."
+  },
   "answer": {
     "pass": "Profiles and everything that is a value are decided at startup, even with Spring AOT: one image became dev1, dev2, qa1 and prod1 with the right profiles, profile-file values and @Bean-method choice, and every environment used the same JDK AOT cache (trained with no profile active) and started as fast as prod1. What Spring AOT freezes is which beans exist: the @Profile(\"prod\") and @ConditionalOnProperty beans were missing in prod with AOT on and only appeared when the same image ran without Spring AOT, which also started measurably slower. So vary values per environment, never the bean graph.",
     "fail": "Not as expected: at least one result differs from the known behaviour. See 'Unexpected results' for what differed and what to check.",

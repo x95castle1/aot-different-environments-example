@@ -3,6 +3,16 @@
   "title": "06 · Training the AOT cache with a real workload",
   "kind": "performance",
   "question": "A more complex application needs warming up with different pieces of code exercised. How do you train the AOT cache with a real workload when the real Config Server, Vault and Mongo can't be reached at build time, and what does it buy over training on startup alone?",
+  "preview": {
+    "steps": [
+      "Train the AOT cache with 3,000 real requests against throwaway services",
+      "Build three images: no cache, startup-trained cache, workload-trained cache",
+      "Time each in dev1: startup, first request, first 50 and 300 requests",
+      "Count classes still loaded from the jars after warm-up",
+      "Run the workload-trained image as dev1 and prod1"
+    ],
+    "answer": "Workload training keeps startup the same but makes the first request ~2x faster and the first 300 ~10-20% faster."
+  },
   "answer": {
     "pass": "Three images of the same app are compared: UNTRAINED has no AOT cache; CONTEXT-TRAINED has a cache recorded in docker build by only starting the app (the Spring context comes up, then the JVM exits before any request), so it holds startup code only; WORKLOAD-TRAINED has a cache recorded in the pipeline while the app served real requests (training-pipeline.sh), so it also holds the request-path code. Result: Train in the pipeline, not in docker build: run the untrained image against throwaway Config Server, Vault and Mongo with fake data, drive a representative workload at it, stop it cleanly (the JVM writes the cache on exit), and add only that cache file on top of the exact untrained image. Startup stays about the same as a cache trained on startup alone, but the first requests no longer pay for loading and profiling the request path: the first request is about twice as fast and the first 300 requests are 10-20% faster, and far fewer classes are loaded from the jars at runtime. The same workload-trained image then ran as dev1 (dev,dev1) and prod1 (prod,prod1), each with its own Config Server settings, Vault secret, database and JVM flags, and both used the AOT cache.",
     "fail": "Three images of the same app are compared: UNTRAINED has no AOT cache; CONTEXT-TRAINED has a cache recorded in docker build by only starting the app (the Spring context comes up, then the JVM exits before any request), so it holds startup code only; WORKLOAD-TRAINED has a cache recorded in the pipeline while the app served real requests (training-pipeline.sh), so it also holds the request-path code. Not as expected: at least one result differs from the known behaviour. See 'Unexpected results' for what differed and what to check.",

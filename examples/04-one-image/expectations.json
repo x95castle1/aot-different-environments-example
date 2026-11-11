@@ -3,6 +3,15 @@
   "title": "04 · One build, promoted unchanged through every environment",
   "kind": "functional",
   "question": "The same build gets deployed to all environments. Can a Spring AOT + AOT-cache image be built once and promoted dev → qa → prod unchanged?",
+  "preview": {
+    "steps": [
+      "Build once, push to a local registry",
+      "Scan the image: no environment names, hosts or settings inside",
+      "Deploy the same digest to dev1, qa1, prod1, each with its own settings",
+      "Check all three run the same build and use the AOT cache"
+    ],
+    "answer": "Yes: one digest runs everywhere; each environment brings its own env vars and config."
+  },
   "answer": {
     "pass": "Yes. The image was built once, pushed, and only its digest was deployed to dev1, qa1 and prod1. The image contains no environment names, hosts or settings; each environment brought its own through env vars and a mounted config directory. All three ran the same image and reported the same build, each with its own settings, and all three used the AOT cache baked into it.",
     "fail": "Not as expected: at least one result differs from the known behaviour. See 'Unexpected results' for what differed and what to check.",

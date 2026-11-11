@@ -3,6 +3,16 @@
   "title": "03 · Config Server, Vault and MongoDB at startup, nothing at build time",
   "kind": "functional",
   "question": "The app connects to Config Server, Vault and MongoDB at startup; systems and credentials vary by environment and none of them is reachable at build time. Can a Spring AOT + AOT-cache image be built that way?",
+  "preview": {
+    "steps": [
+      "Build the image with no network at all",
+      "Start Config Server, Vault and Mongo; give dev1 its credentials",
+      "Start dev1: config from Config Server, password from Vault, connect to Mongo",
+      "Rotate the password in Vault, restart: the same image picks it up",
+      "Break each dependency: startup refuses to run"
+    ],
+    "answer": "Yes: the build needs no network; everything is fetched at startup, and a broken dependency stops startup."
+  },
   "answer": {
     "pass": "Yes. Both build-time steps (Spring AOT processing inside mvn package, and the AOT-cache training run) ran with no network at all, skipping the Config Server and Vault imports. At startup the same image fetched its config from Config Server, its Mongo password from Vault and connected to Mongo. Rotating the password needed only a restart, not a rebuild, and an unreachable Config Server, an unreachable Vault or a bad Vault token each stopped startup.",
     "fail": "Not as expected: at least one result differs from the known behaviour. See 'Unexpected results' for what differed and what to check.",
