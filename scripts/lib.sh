@@ -136,7 +136,8 @@ expect() {
   local excerpt=""
   if [[ -n "$evidence" && -f "$RAW/$evidence" ]]; then
     # Logs: the end is where errors are. Other evidence: the start is the summary.
-    if [[ "$evidence" == *.log ]]; then excerpt=$(grep -v '^\s*$' "$RAW/$evidence" | tail -6 | cut -c1-220)
+    # (|| true: an empty log has no line for grep to match, which must not stop the demo under set -e + pipefail)
+    if [[ "$evidence" == *.log ]]; then excerpt=$(grep -v '^\s*$' "$RAW/$evidence" | tail -6 | cut -c1-220 || true)
     else excerpt=$(head -6 "$RAW/$evidence" | cut -c1-220); fi
   fi
   jq -c -n --arg id "$id" --arg subject "$subject" --arg label "$label" --arg expected "$expected" \
