@@ -10,7 +10,8 @@ Spring AOT runs at build time; does that freeze the profiles?
 - **Silently frozen:** `@Profile` and `@ConditionalOnProperty` beans. They were evaluated during the build, when no
   profile was active. This demo shows that side by side with Spring AOT switched off.
 - **Startup doesn't suffer:** every environment uses the same JDK AOT cache (trained with no profile active) and
-  starts as fast as prod1. Spring AOT itself makes startup ~1.7× faster than the same image with it off.
+  starts as fast as prod1. Spring AOT itself makes startup ~30% faster than the same image with it off (each with
+  a JDK AOT cache trained for its own start).
 
 No external services needed.
 
@@ -72,12 +73,14 @@ Then each instance is started again on its own, `RUNS` times, and the run ends w
 
 There are two different AOTs here, and only one of them changes:
 - **JDK AOT cache**: classes loaded and linked ahead of time, trained in the image build. It's on for every
-  row; the column shows whether the JVM used it and how many of the loaded classes came from it.
+  row; the column shows whether the JVM used it and how many of the loaded classes came from it. The last row
+  uses a second cache, which the demo trains for the start without Spring AOT.
 - **Spring AOT**: bean definitions generated as code at build time. Only the last row runs without it.
 
 Every row is compared with the same two scenarios:
-- **vs no Spring AOT**: how much faster this environment starts than prod1 without Spring AOT. Both use the same
-  JDK AOT cache, so this is what Spring AOT alone is worth, and every environment gets it, not only prod1.
+- **vs no Spring AOT**: how much faster this environment starts than prod1 without Spring AOT. Each side has a
+  JDK AOT cache trained for its own start, so this is what Spring AOT alone is worth, and every environment gets
+  it, not only prod1.
 - **vs prod1**: did this environment's profiles cost startup time compared with prod1?
 - **\***: the comparison the outcome is judged on: prod1 on vs no Spring AOT (Spring AOT must help), every other
   environment on vs prod1 (profiles must cost nothing).
@@ -85,9 +88,11 @@ Every row is compared with the same two scenarios:
 Reading it:
 - The cache was trained with no profile active, yet every environment loads the same ~7,550 classes from it. Profiles
   only change which config files Spring reads, not the JDK, classpath or JVM flags the cache depends on.
-- Without Spring AOT, the JDK AOT cache is still used, but Spring loads ~650 extra classes to process the
-  configuration at startup and evaluates every condition again. That's the ~1.7× Spring AOT buys, in exchange for
-  the frozen bean graph above.
+- Without Spring AOT, Spring loads ~300 more classes to process the configuration at startup and evaluates every
+  condition again. That's the ~30% Spring AOT buys, in exchange for the frozen bean graph above.
+- A cache only helps the start it was trained on. Started without Spring AOT on the image's own cache (trained
+  with Spring AOT on), ~650 classes miss the cache and the gap grows to ~1.6×. That measures the mismatch as well
+  as Spring AOT, which is why the last row gets its own cache.
 
 ## Reading the report
 
@@ -106,8 +111,10 @@ The labels, expected values and explanations come from [`expectations.json`](exp
 - **Pitfall:** [`pitfall/`](app/src/main/java/com/example/profiles/pitfall). Kept on purpose for the demo.
 - Guardrail: [`AotSafetyArchitectureTest`](app/src/test/java/com/example/profiles/AotSafetyArchitectureTest.java)
   fails the build if `@Profile` / `@ConditionalOnProperty` / `@ConditionalOnExpression` appear outside `pitfall/`.
-- "prod1 without Spring AOT" overrides the entrypoint with `java -XX:AOTCache=/app/app.aot -jar /app/app.jar`: the same image
-  and JDK AOT cache, just without `-Dspring.aot.enabled=true`, so the timing difference is Spring AOT alone.
+- "prod1 without Spring AOT" is the same image started without `-Dspring.aot.enabled=true` (the entrypoint is
+  overridden). Its JDK AOT cache is trained by [`demo.sh`](demo.sh) (`train_comparison_cache`) the way the
+  Dockerfile trains the image's, minus that flag, into a volume mounted at `/cache`. So the two starts differ in
+  Spring AOT only.
 - [`demo.sh`](demo.sh) times the instances one at a time (the six functional instances start together and would
   compete for CPU), counts classes from the cache with `-Xlog:class+load` (`AOT_USAGE_SCRIPT` in
   [`scripts/lib.sh`](../../scripts/lib.sh)), and takes Spring's `Started … in X seconds`.

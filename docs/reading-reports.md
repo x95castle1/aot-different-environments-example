@@ -44,7 +44,8 @@ reports/all/<run id>/summary.md|json      after `make examples EX=all`: one line
   - "prod flags" vs "cache off";
   - "1 CPU" vs "1 CPU, cache off" (a slow machine doesn't look like a cache problem);
   - "smaller heap" vs "prod flags";
-  - in 02: each environment vs "prod1", and "prod1" vs "prod1 without Spring AOT" (JDK AOT cache still on).
+  - in 02: each environment vs "prod1", and "prod1" vs "prod1 without Spring AOT" (which has a JDK AOT cache
+    trained for its own start, so only Spring AOT differs).
   - in 06: per metric, context-trained vs untrained and workload-trained vs context-trained.
 - A scenario with `"expect": "baseline"` isn't judged itself; it's only there to compare with (e.g. cache off). A
   judged scenario can also be compared with, like 01's prod flags, but it isn't a baseline. (`"reference"`,
@@ -63,7 +64,8 @@ reports/all/<run id>/summary.md|json      after `make examples EX=all`: one line
   - expected `no-benefit-expected`: about as slow as the baseline.
 - Example 05 also reports **attribution**: prod1 is timed in all four combinations of Spring AOT and the JDK AOT cache
   (on or off each), so the report states what each one saves on its own and what both save together, with no
-  assumption about which is added first.
+  assumption about which is added first. The start with the cache but without Spring AOT uses a cache trained for
+  that start: a cache only helps the start it was trained on.
 
 ## Where the interpretation comes from
 
@@ -110,7 +112,7 @@ change what a report says, edit that file; the demo scripts only measure. Its `p
 | Example | PASS looks like | Common unexpected results and causes |
 |---|---|---|
 | 01 JVM args | Prod ~2–3× faster than cache-off. Heap, memory, CPU, `-D`, GC logging and Parallel GC are `unchanged`. ZGC is `no-benefit-expected`. The guardrail refuses to start. | **Cache "not used" everywhere:** image built for another CPU architecture or JDK; rebuild on/for this platform. **ZGC "USED":** the JDK is 26+, so update the expectation. **Timings `inconclusive`:** busy machine; rerun with `RUNS=10`. |
-| 02 Profiles | Profiles, values and notifier follow each env. The `@Profile`/`@ConditionalOnProperty` beans are `limitation-shown` in prod with Spring AOT and `works` (present) without Spring AOT. Every instance uses the JDK AOT cache; every env is `unchanged` vs prod1, and prod1 is `improved` (~1.6×) vs prod1 without Spring AOT. | **Pitfall bean present with AOT on:** Spring AOT isn't active (check the "Spring AOT generated code" check) or the build ran with the prod profile. **Cache "not used" everywhere:** image built for another CPU architecture or JDK. **Timings `inconclusive`:** rerun with `RUNS=10`. |
+| 02 Profiles | Profiles, values and notifier follow each env. The `@Profile`/`@ConditionalOnProperty` beans are `limitation-shown` in prod with Spring AOT and `works` (present) without Spring AOT. Every instance uses the JDK AOT cache; every env is `unchanged` vs prod1, and prod1 is `improved` (~30% faster) vs prod1 without Spring AOT. | **Pitfall bean present with AOT on:** Spring AOT isn't active (check the "Spring AOT generated code" check) or the build ran with the prod profile. **Cache "not used" everywhere:** image built for another CPU architecture or JDK. **Timings `inconclusive`:** rerun with `RUNS=10`. |
 | 03 Connections | Both build steps succeed under `--network=none` with the imports skipped. dev1 loads its Config Server file and Vault path and pings Mongo. Rotation changes the fingerprint. All three broken setups refuse to start. | **Build fails offline:** `go-offline` missed a dependency. **Vault path not loaded:** Vault was restarted (in-memory), so rerun the bootstrap. **A broken setup started:** fail-fast is off at runtime. |
 | 04 One image | Zero environment markers in the image. All three envs run the promoted digest with their own settings, use the AOT cache, and report one build. | **Marker found:** environment config was bundled in the jar or the image ENV. **Digest mismatch:** a deployment used a tag, not the digest. |
 | 05 All together | Every env verified. dev1/qa1/prod1 use the cache; dev2 (ZGC) is `no-benefit-expected`. Spring AOT + cache is several times faster than the Plain JVM - No Cache, with both contributing. | **Env not healthy:** Vault restarted, so run `make -C examples/05-all-together bootstrap apps`. **Timings `inconclusive`:** rerun `startup-compare RUNS=5`. |

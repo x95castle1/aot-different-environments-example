@@ -67,13 +67,17 @@ saves 0.338s, the JDK AOT cache alone saves 0.697s, and both together save 0.971
 
 - All four combinations of Spring AOT and the JDK AOT cache (on or off each) are timed, so what each one saves on
   its own is measured, not inferred from the order they're added in.
+- Each row has the cache it would really have. "JDK AOT cache only" starts without Spring AOT, which the image's
+  cache wasn't trained on, so `startup-compare.sh` first trains a cache for that start (the Dockerfile's training
+  run minus `-Dspring.aot.enabled=true`, into a volume). With the image's own cache that row would be ~0.13 s
+  slower and understate what the cache alone is worth.
 - **JDK AOT cache**: classes loaded from a cache, counted in one extra start per row. The ~1,460 in the two "off"
-  rows come from the JDK's own default class archive (CDS), which every JVM uses, not from the app's cache.
+  rows come from the JDK's own default class archive (CDS), which a plain JVM uses, not from the app's cache.
 - **vs Plain JVM - No Cache**: every row against the same image with neither Spring AOT nor the JDK AOT cache.
   Only the default row is judged (`*`); the two "only" rows are information (Spring AOT alone is ~15-25% faster,
   at or inside the ±25% noise band).
-- Without Spring AOT the cache is still used, but Spring loads ~850 more classes to process the configuration at
-  startup, and those aren't in the cache.
+- Without Spring AOT, Spring loads ~350 more classes to process the configuration at startup; the cache trained
+  for that start holds them.
 
 `make aot-check`: prod1, dev1 and qa1 load ~11,000 of ~11,650 classes from the cache; dev2 (ZGC) loads 0 and still starts.
 
