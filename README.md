@@ -56,7 +56,9 @@ Rules that keep one image working everywhere:
    endpoint exposure.
 4. **Keep integrations enabled at build time.** Imports are `optional:` and fail-fast is off only during the build
    (`build-time.yml`). At runtime `fail-fast: true` makes them mandatory again.
-5. **Train the AOT cache with the prod flags** and deploy by digest. Other environments override `JDK_JAVA_OPTIONS`;
+5. **Train the AOT cache with the prod flags and an explicit heap, and check it in the build.** `docker build` has
+   no memory limit, so a percentage-sized heap follows the build machine; above ~32 GB it records a cache that no
+   normal-sized environment can use. Deploy by digest. Other environments override `JDK_JAVA_OPTIONS`;
    incompatible flags fall back safely.
 
 ## Layout

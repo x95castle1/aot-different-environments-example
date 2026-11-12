@@ -80,7 +80,9 @@ The labels, expected values and explanations come from [`expectations.json`](exp
 
 - [`Dockerfile`](Dockerfile) sets the prod flags once
   (`ENV JDK_JAVA_OPTIONS=-XX:+UseG1GC -XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError`) and trains the cache
-  with them (`-XX:AOTCacheOutput`, `-Dspring.context.exit=onRefresh`, `--network=none`).
+  with them (`-XX:AOTCacheOutput`, `-Dspring.context.exit=onRefresh`, `--network=none`), plus an explicit `-Xmx1g`
+  so the build machine's RAM doesn't decide the heap (see Pitfalls). A second `RUN` then starts the app once with
+  `-XX:AOTMode=on -Xmx256m`: a cache that a small environment couldn't use fails the build.
 - Prod doesn't set `JDK_JAVA_OPTIONS`, so it runs with exactly the trained flags. Every other environment overrides it.
 - The JVM checks compatibility at startup (`-XX:AOTMode=auto`, the default): use the cache if possible, otherwise warn
   and continue.
@@ -92,5 +94,9 @@ The labels, expected values and explanations come from [`expectations.json`](exp
 - The cache is tied to the **JDK build, CPU architecture and classpath**. Build the image for the platform you deploy
   to (`docker buildx build --platform linux/amd64`); multi-arch images train once per platform.
 - **ZGC needs JDK 26+** to use the AOT cache (JEP 516). On JDK 25 it silently falls back unless `AOTMode=on`.
-- A heap above ~32 GB turns compressed oops off; check with this demo's method (`-Xlog:class+load`) before relying on it.
+- **Compressed oops must match the training run.** A heap above ~32 GB turns them off, and the JVM then rejects a
+  cache recorded with them (and the other way round). That includes the training run itself: `docker build` has no
+  memory limit, so with `MaxRAMPercentage=75` a build machine with more than ~43 GB of RAM would record a cache
+  that every smaller environment rejects. Hence the explicit `-Xmx` and the `-XX:AOTMode=on` check in the
+  [`Dockerfile`](Dockerfile).
 - APM agents (`-javaagent`) can change class loading; measure them the same way.

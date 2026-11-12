@@ -67,7 +67,9 @@ services:
       mongo: { condition: service_healthy }
     # The image's ENTRYPOINT, with -XX:AOTCacheOutput instead of -XX:AOTCache: record a cache instead of using one.
     # Spring AOT on, and the prod JVM flags come from the image's JDK_JAVA_OPTIONS, exactly as in prod.
-    entrypoint: ["java", "-XX:AOTCacheOutput=/tmp/app.aot", "-Dspring.aot.enabled=true", "-jar", "/app/app.jar"]
+    # -Xmx1g: this container has no memory limit, so MaxRAMPercentage=75 would size the heap from the CI machine's
+    # RAM; above ~43 GB that switches compressed oops off and no normal-sized environment could use the cache.
+    entrypoint: ["java", "-XX:AOTCacheOutput=/tmp/app.aot", "-Xmx1g", "-Dspring.aot.enabled=true", "-jar", "/app/app.jar"]
     environment:
       APP_ENV: training                          # -> profile "training": training/config-repo/workload-app-training.yml
       CONFIG_SERVER_URL: http://config-server:8888

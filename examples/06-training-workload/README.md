@@ -101,27 +101,36 @@ comparison:
 FROM untrained AS context-trained
 USER root
 RUN --network=none java \
-      -XX:AOTCacheOutput=/app/app.aot \
+      -XX:AOTCacheOutput=/app/app.aot -Xmx1g \
       -Dspring.aot.enabled=true \
       -Dspring.config.additional-location=optional:classpath:/build-time.yml \
       -Dspring.context.exit=onRefresh \
       -jar /app/app.jar
+RUN --network=none java \
+      -XX:AOTCache=/app/app.aot -XX:AOTMode=on -Xmx256m \
+      ...the same options...                # the check: fails the build if a small heap can't use the cache
 USER app
 ```
 
-What happens in that `RUN`:
+What happens in the first `RUN`:
 
 1. **The JVM starts with the prod flags.** They come from the `JDK_JAVA_OPTIONS` the `untrained` stage set, so the
    cache is recorded under prod settings. `-XX:AOTCacheOutput` tells it to record which classes it loads and
    links, plus method profiles.
-2. **Spring starts with its build-time code** (`-Dspring.aot.enabled=true`), the same as in every environment.
-3. **The Config Server and Vault imports are skipped.** `build-time.yml` points them at unreachable `.invalid`
+2. **The heap is set explicitly** (`-Xmx1g`). `docker build` has no memory limit, so `MaxRAMPercentage=75` would
+   size the heap from the build machine's RAM. Above ~43 GB that is a heap over 32 GB, which switches compressed
+   oops off, and every normal-sized environment would then reject the cache.
+3. **Spring starts with its build-time code** (`-Dspring.aot.enabled=true`), the same as in every environment.
+4. **The Config Server and Vault imports are skipped.** `build-time.yml` points them at unreachable `.invalid`
    hosts with fail-fast off, and `--network=none` means nothing could connect anyway.
-4. **Every bean is created,** including the Mongo client, which doesn't connect until first use.
-5. **Spring stops right after startup** (`-Dspring.context.exit=onRefresh`): it exits as soon as the application
+5. **Every bean is created,** including the Mongo client, which doesn't connect until first use.
+6. **Spring stops right after startup** (`-Dspring.context.exit=onRefresh`): it exits as soon as the application
    context is ready, before the web server takes any requests.
-6. **The JVM exits normally,** and JDK 25 assembles what it recorded into `/app/app.aot` (~76 MB), which stays in
+7. **The JVM exits normally,** and JDK 25 assembles what it recorded into `/app/app.aot` (~76 MB), which stays in
    the image.
+
+The second `RUN` starts the app once more with a 256 MB heap and `-XX:AOTMode=on`, which turns an unusable cache
+into an error: a cache that a small environment couldn't use fails the build instead of being shipped.
 
 So the cache holds only what ran during startup: Spring, your beans, the Mongo and Vault clients, Tomcat setup. No
 request was ever served, so the request path is missing (validation, JSON, Mongo queries, error handling). Those
@@ -257,6 +266,9 @@ explanations come from [`expectations.json`](expectations.json).
 
 - **Train with what prod runs:** Spring AOT on (`-Dspring.aot.enabled=true`), the prod JVM flags (the image's
   `JDK_JAVA_OPTIONS`), and the same image layers (final image `FROM` the trained one).
+- **Give the training run an explicit heap** (`-Xmx1g` in the Dockerfile and for the `trainer`). Neither
+  `docker build` nor the trainer has a memory limit, so a percentage-sized heap would follow the CI machine's RAM;
+  over 32 GB of heap it records a cache without compressed oops, which no smaller environment can use.
 - **Make the workload look like prod traffic:** the main endpoints, serialization, DB queries, error paths,
   scheduled jobs. Paths the workload never touches stay uncached (the ~300 classes above).
 - **Stop cleanly with time to spare:** SIGTERM, not SIGKILL. JDK 25 assembles the cache after the app exits, so give

@@ -65,6 +65,10 @@ USER root
 # Training run, step by step:
 #   - The JVM runs with the prod flags (JDK_JAVA_OPTIONS above), so the cache is recorded under prod settings.
 #     -XX:AOTCacheOutput records which classes get loaded and linked, plus method profiles.
+#   - -Xmx1g: docker build has no memory limit, so MaxRAMPercentage=75 would size the heap from the BUILD
+#     machine's RAM. Above ~43 GB that is a heap over 32 GB, which switches compressed oops off, and a cache
+#     recorded without them is rejected by every JVM that has them (any heap under ~32 GB). An explicit heap
+#     keeps the cache independent of where the image is built; its size doesn't matter to the cache.
 #   - -Dspring.aot.enabled=true: Spring runs its build-time (Spring AOT) code, as in every environment.
 #   - build-time.yml points Config Server and Vault at unreachable .invalid hosts with fail-fast off, so those
 #     imports are skipped. --network=none proves nothing here needs Config Server, Vault or Mongo.
@@ -76,12 +80,22 @@ USER root
 # handling) never ran, so ~2,150 of its classes are still loaded from the jars on the first requests. Training
 # with a real workload (training-pipeline.sh) covers that.
 RUN --network=none java \
-      -XX:AOTCacheOutput=/app/app.aot \
+      -XX:AOTCacheOutput=/app/app.aot -Xmx1g \
       -Dspring.aot.enabled=true \
       -Dspring.config.additional-location=optional:classpath:/build-time.yml \
       -Dspring.context.exit=onRefresh \
       -jar /app/app.jar \
  && ls -lh /app/app.aot
+
+# Check the cache the way a small environment would start: a 256 MB heap, and -XX:AOTMode=on, which turns an
+# unusable cache into an error. A cache such an environment couldn't use fails the build here, instead of being
+# shipped and silently ignored.
+RUN --network=none java \
+      -XX:AOTCache=/app/app.aot -XX:AOTMode=on -Xmx256m \
+      -Dspring.aot.enabled=true \
+      -Dspring.config.additional-location=optional:classpath:/build-time.yml \
+      -Dspring.context.exit=onRefresh \
+      -jar /app/app.jar
 
 USER app
 
