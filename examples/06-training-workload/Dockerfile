@@ -4,7 +4,7 @@
 # template. (The build stage is the same as in the other examples' Dockerfiles.)
 #
 #   eclipse-temurin:25-jre
-#   └─ untrained         (--target untrained)  the app, prod JVM flags, entrypoint; NO AOT cache.
+#   └─ untrained         (--target untrained)  the app, prod JVM flags, a plain-JVM entrypoint; NO AOT cache.
 #      │                                       training-pipeline.sh trains this exact image with a real workload,
 #      │                                       then Dockerfile.trained adds the cache on top -> workload-trained.
 #      └─ context-trained (default target)     + a cache recorded right here, in docker build, by only STARTING
@@ -52,9 +52,10 @@ ENV JDK_JAVA_OPTIONS="-XX:+UseG1GC -XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemor
 
 USER app
 EXPOSE 8080
-# -XX:AOTCache points at the cache a later layer adds (stage 3 below, or Dockerfile.trained). In this stage the
-# file doesn't exist yet: the JVM warns and runs without a cache.
-ENTRYPOINT ["java", "-XX:AOTCache=/app/app.aot", "-Dspring.aot.enabled=true", "-jar", "/app/app.jar"]
+# No -XX:AOTCache here: there is no cache yet, and pointing the JVM at a missing (or unusable) cache makes it
+# start with no class archive at all, not even the JDK's default one, so this stage wouldn't be a fair "no cache"
+# baseline. The stages that add app.aot (stage 3 below, Dockerfile.trained) set the entrypoint that uses it.
+ENTRYPOINT ["java", "-Dspring.aot.enabled=true", "-jar", "/app/app.jar"]
 
 ############################
 # 3. "context-trained" (default target): + a cache recorded in docker build by only STARTING the app.
@@ -77,7 +78,7 @@ USER root
 #     server takes any request.
 #   - The JVM exits normally and JDK 25 assembles what it recorded into /app/app.aot (~76 MB).
 # Result: a cache of what runs during STARTUP only. Request-path code (validation, JSON, Mongo queries, error
-# handling) never ran, so ~2,150 of its classes are still loaded from the jars on the first requests. Training
+# handling) never ran, so ~1,450 of its classes are still read from the jars on the first requests. Training
 # with a real workload (training-pipeline.sh) covers that.
 RUN --network=none java \
       -XX:AOTCacheOutput=/app/app.aot -Xmx1g \
@@ -98,6 +99,7 @@ RUN --network=none java \
       -jar /app/app.jar
 
 USER app
+ENTRYPOINT ["java", "-XX:AOTCache=/app/app.aot", "-Dspring.aot.enabled=true", "-jar", "/app/app.jar"]
 
 ARG REVISION=unknown
 ARG CREATED=unknown

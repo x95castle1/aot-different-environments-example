@@ -5,7 +5,7 @@ Does that break the JVM AOT cache, and does startup suffer?
 
 **Answer:** The AOT cache is trained once, in the image build, with the **prod** flags. Environments can change heap
 size, container memory, CPU count, system properties, logging and even the GC (Parallel), and the cache is still
-used: startup stays the same. Only flags that make the cache unusable fall back to a normal JVM start. ZGC on
+used: startup stays the same. Only flags that make the cache unusable fall back to a start without it. ZGC on
 JDK 25 is the example here. If you'd rather fail than fall back, `-XX:AOTMode=on` turns the fallback into a
 startup error.
 
@@ -50,9 +50,12 @@ The run ends with this table in the terminal, then the verdict. The same table i
   cache off (baseline)               not used 0/7463  0.581 0.579 0.579 0.584 0.58   0.58s   -                                    -                        baseline
 ```
 
-- **JDK AOT cache** column: whether the JVM used the cache, and how many of the loaded classes came from it.
-- **vs cache off**: how much the cache is worth with these flags (compared with the prod flags and the cache
-  switched off). The 1 CPU row is compared with 1 CPU and the cache off instead, because one CPU slows every start.
+- **JDK AOT cache** column: whether the JVM used the cache, and how many of the loaded classes came from it. The
+  ~1,400 in the two "cache off" rows come from the JDK's own default class archive (CDS), which a plain JVM uses.
+  ZGC shows 0: a cache the JVM rejects switches that default archive off too.
+- **vs cache off**: how much the cache is worth with these flags, compared with the same image started as a plain
+  JVM (prod flags, no `-XX:AOTCache`). The 1 CPU row is compared with 1 CPU and no cache instead, because one CPU
+  slows every start.
 - **vs prod (trained flags)**: did these flags lose any of the cache's benefit compared with the prod flags it was
   trained with? Prod isn't a baseline: it's judged itself (vs cache off), and it's the target every compatible flag
   set should match.
@@ -67,7 +70,8 @@ Reading it:
 - With compatible flags, startup stays at the prod baseline, because the same ~7,500 classes come from the cache.
 - One CPU is slower for every app (less CPU). The cache is still used and still helps; compare with the "cache off"
   baseline row.
-- ZGC startup equals "cache off": the JVM printed `Unable to use AOT cache` and started normally.
+- ZGC starts about as fast as "cache off" (a little slower): the JVM printed `Unable to use AOT cache` and started
+  without it, and without the JDK's default class archive.
 
 ## Reading the report
 
@@ -86,6 +90,9 @@ The labels, expected values and explanations come from [`expectations.json`](exp
 - Prod doesn't set `JDK_JAVA_OPTIONS`, so it runs with exactly the trained flags. Every other environment overrides it.
 - The JVM checks compatibility at startup (`-XX:AOTMode=auto`, the default): use the cache if possible, otherwise warn
   and continue.
+- The two "cache off" baselines start the same image without `-XX:AOTCache` (the entrypoint is overridden), i.e. as
+  a plain JVM. They don't use `-XX:AOTMode=off`: that also switches off the JDK's default class archive, which
+  every plain JVM has, and would make the baseline slower than a real one.
 - [`demo.sh`](demo.sh) counts classes loaded from `shared objects file` with `-Xlog:class+load` (see
   `AOT_USAGE_SCRIPT` in [`scripts/lib.sh`](../../scripts/lib.sh)) and takes Spring's `Started … in X seconds`.
 
@@ -94,6 +101,9 @@ The labels, expected values and explanations come from [`expectations.json`](exp
 - The cache is tied to the **JDK build, CPU architecture and classpath**. Build the image for the platform you deploy
   to (`docker buildx build --platform linux/amd64`); multi-arch images train once per platform.
 - **ZGC needs JDK 26+** to use the AOT cache (JEP 516). On JDK 25 it silently falls back unless `AOTMode=on`.
+- **The fallback is slightly worse than no cache.** A cache the JVM rejects also disables the JDK's default class
+  archive, so that start is a few percent slower than the same JVM without `-XX:AOTCache`. An environment that has
+  to keep incompatible flags is better off started without the flag (override the entrypoint).
 - **Compressed oops must match the training run.** A heap above ~32 GB turns them off, and the JVM then rejects a
   cache recorded with them (and the other way round). That includes the training run itself: `docker build` has no
   memory limit, so with `MaxRAMPercentage=75` a build machine with more than ~43 GB of RAM would record a cache

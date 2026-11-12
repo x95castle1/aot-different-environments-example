@@ -8,7 +8,7 @@
       "Train the AOT cache with 3,000 real requests against throwaway services",
       "Build three images: no cache, startup-trained cache, workload-trained cache",
       "Time each in dev1: startup, first request, first 50 and 300 requests",
-      "Count classes still loaded from the jars after warm-up",
+      "Count classes still read from the jars after warm-up",
       "Run the workload-trained image as dev1 and prod1"
     ],
     "answer": "Workload training keeps startup the same but makes the first request ~2x faster and the first 300 ~10-20% faster."
@@ -23,7 +23,7 @@
     "Two environments, with this example's own Config Server, Vault and Mongo (compose.yml): dev1 (profiles dev,dev1, its own JVM flags with a smaller heap) and prod1 (profiles prod,prod1, the image's default flags, i.e. the ones the caches were trained with). Each gets tier settings (workload-app-dev.yml / -prod.yml) and environment settings (workload-app-dev1.yml / -prod1.yml) from Config Server, and its own Mongo password from Vault.",
     "Three images of the same app timed in dev1: no cache, a cache trained on startup only (in the build), a cache trained by the workload.",
     "Per image, RUNS fresh starts (round-robin, Mongo data reset before each): Spring's startup time, the latency of the first request, and the total time of the first 50 and the first 300 requests of the same fixed request mix.",
-    "Per image, one run with class-load logging across startup + 300 requests: how many classes came from the AOT cache and how many had to be loaded from the jars.",
+    "Per image, one run with class-load logging across startup + 300 requests: how many classes came from a class archive (the image's AOT cache; for the untrained image the JDK's own default archive), how many had to be read from the jars or the JDK image, and how many were generated at runtime (lambdas, proxies), which no cache can hold.",
     "The workload-trained image (the one you'd ship) deployed to dev1 and to prod1: profiles, which Config Server files and Vault path it loaded, its database, a per-tier setting, its JVM flags, and whether it used the AOT cache."
   ],
   "noiseBand": 0.25,
@@ -88,7 +88,7 @@
       "label": "untrained: AOT cache",
       "expected": "not used",
       "outcome": "info",
-      "why": "Baseline: this image has no cache file, so everything is loaded from the jars."
+      "why": "Baseline: this image has no AOT cache and starts as a plain JVM. The ~1,450 classes it still gets from an archive are JDK classes from the JDK's own default class archive (CDS), which a plain JVM uses."
     },
     "cache.context": {
       "group": "Classes from the AOT cache",
@@ -111,25 +111,25 @@
     },
     "outside.untrained": {
       "group": "Classes from the AOT cache",
-      "label": "untrained: classes loaded from the jars",
-      "why": "Information: everything."
+      "label": "untrained: classes not from a class archive",
+      "why": "Information: the whole app and its libraries are read from the jars, and the JDK classes outside the default archive from the JDK's runtime image."
     },
     "outside.context": {
       "group": "Classes from the AOT cache",
-      "label": "context-trained: classes loaded from the jars",
-      "why": "Information: the request path (validation, JSON, Mongo queries, error handling) wasn't seen during startup-only training."
+      "label": "context-trained: classes not from the AOT cache",
+      "why": "Information: the request path (validation, JSON, Mongo queries, error handling) wasn't seen during startup-only training, so its classes are read from the jars on the first requests."
     },
     "outside.workload": {
       "group": "Classes from the AOT cache",
-      "label": "workload-trained: classes loaded from the jars",
-      "why": "Information: what the workload didn't exercise."
+      "label": "workload-trained: classes not from the AOT cache",
+      "why": "Information: what's left can't be cached. Almost all of it is generated at runtime (lambdas, proxies); the few classes still read from the jars fail verification because an optional dependency is absent, or come from a signed jar. A path the workload didn't exercise would show up here as classes read from the jars."
     },
     "fewer-outside": {
       "group": "Classes from the AOT cache",
-      "label": "workload training leaves fewer classes to load from the jars",
-      "short": "fewer classes loaded at runtime",
+      "label": "workload training leaves fewer classes to read from the jars",
+      "short": "fewer classes read from the jars",
       "expected": "yes",
-      "why": "The workload exercised the request paths during training, so their classes are in the cache instead of being loaded on the first requests.",
+      "why": "The workload exercised the request paths during training, so their classes are in the cache instead of being read from the jars on the first requests.",
       "ifUnexpected": [
         "Does run-workload.sh exercise the same endpoints as the measurement? Compare the status counts in the training output.",
         "Read raw/context.classes.txt and raw/workload.classes.txt."
@@ -240,7 +240,7 @@
         "label": "untrained",
         "metric": "startup time",
         "expect": "baseline",
-        "why": "Baseline: no AOT cache."
+        "why": "Baseline: no AOT cache, a plain JVM."
       },
       "startup.context": {
         "label": "context-trained",

@@ -13,7 +13,7 @@
     "answer": "Yes: one image runs as four environments; Spring AOT + the AOT cache start prod1 about 3x faster."
   },
   "answer": {
-    "pass": "Yes. The same image ran as dev1, dev2, qa1 and prod1. Each got its own profiles, Config Server settings, Vault secrets and Mongo database, saw only its own data, and used its own JVM flags. dev1, qa1 and prod1 used the AOT cache; dev2 runs ZGC on purpose and fell back to a normal start, as expected on JDK 25. Against the real Config Server, Vault and Mongo, Spring AOT + the AOT cache started prod1 much faster than the same image as a plain JVM (no Spring AOT, no cache); the report also shows what each one saves on its own.",
+    "pass": "Yes. The same image ran as dev1, dev2, qa1 and prod1. Each got its own profiles, Config Server settings, Vault secrets and Mongo database, saw only its own data, and used its own JVM flags. dev1, qa1 and prod1 used the AOT cache; dev2 runs ZGC on purpose and fell back to a start without the cache, as expected on JDK 25. Against the real Config Server, Vault and Mongo, Spring AOT + the AOT cache started prod1 much faster than the same image as a plain JVM (no Spring AOT, no cache); the report also shows what each one saves on its own.",
     "fail": "Not as expected: at least one result differs from the known behaviour. See 'Unexpected results' for what differed and what to check.",
     "inconclusive": "Everything works, but some startup times varied too much between runs to judge the gain. Close other workloads and rerun (make -C examples/05-all-together startup-compare RUNS=5)."
   },
@@ -87,7 +87,7 @@
     },
     "cache.zgc": {
       "group": "JDK AOT cache per environment", "label": "JDK AOT cache with ZGC", "short": "JDK AOT cache unusable with ZGC", "expected": "not used", "outcome": "no-benefit-expected",
-      "why": "dev2 runs ZGC on purpose. The JDK 25 AOT cache can't be used with ZGC (ZGC runs without compressed oops, which the cache was built with), so the JVM starts normally without it.",
+      "why": "dev2 runs ZGC on purpose. The JDK 25 AOT cache can't be used with ZGC (ZGC runs without compressed oops, which the cache was built with), so the JVM starts without it (and, because the cache was rejected, without the JDK's default class archive: 0 classes from any archive).",
       "ifUnexpected": ["If the cache was used, the JDK is probably 26+ (ZGC support, JEP 516). Check the JDK in the Run table."]
     },
     "cache.full": {

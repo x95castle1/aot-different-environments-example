@@ -13,14 +13,14 @@
     "answer": "No: compatible flags still use the cache and start as fast as prod; ZGC (JDK 25) falls back without it."
   },
   "answer": {
-    "pass": "No. The AOT cache was trained once, with the prod flags. Different heap sizes, a container memory limit, 1 CPU, extra system properties, GC logging and the Parallel GC all still used it and started as fast as prod (1 CPU is slower overall, but still faster than 1 CPU without the cache). Only ZGC, which the JDK 25 AOT cache doesn't support, fell back to a normal start, and -XX:AOTMode=on turns that fallback into a startup error.",
+    "pass": "No. The AOT cache was trained once, with the prod flags. Different heap sizes, a container memory limit, 1 CPU, extra system properties, GC logging and the Parallel GC all still used it and started as fast as prod (1 CPU is slower overall, but still faster than 1 CPU without the cache). Only ZGC, which the JDK 25 AOT cache doesn't support, fell back to a start without the cache (about as fast as a plain JVM), and -XX:AOTMode=on turns that fallback into a startup error.",
     "fail": "Not as expected: at least one result differs from the known behaviour. See 'Unexpected results' for what differed and what to check.",
     "inconclusive": "Probably, but some startup times varied too much between runs to be sure. Close other workloads and rerun with more runs (make examples EX=01 RUNS=10)."
   },
   "tested": [
     "One image (jvm-args-app) whose AOT cache was trained in the build with the prod flags (the image's default JDK_JAVA_OPTIONS).",
     "10 JVM-flag scenarios on that same image. Each runs once with class-load logging, to count how many classes came from the AOT cache, and RUNS times to time Spring's startup (median reported).",
-    "Two baseline scenarios with the cache switched off (-XX:AOTMode=off), at full CPU and at 1 CPU, to measure what the cache is worth.",
+    "Two baseline scenarios without the cache (the same image started without -XX:AOTCache, i.e. as a plain JVM), at full CPU and at 1 CPU, to measure what the cache is worth.",
     "Guardrail: ZGC with -XX:AOTMode=on, which should refuse to start rather than silently start without the cache."
   ],
   "noiseBand": 0.25,
@@ -58,8 +58,9 @@
     {
       "id": "cpu1-off",
       "label": "1 CPU, cache off (baseline)",
-      "flags": "{PROD} -XX:AOTMode=off",
-      "dockerOpts": "--cpus 1"
+      "flags": "",
+      "dockerOpts": "--cpus 1",
+      "cache": "off"
     },
     {
       "id": "extra-props",
@@ -82,8 +83,9 @@
     {
       "id": "cache-off",
       "label": "cache off (baseline)",
-      "flags": "{PROD} -XX:AOTMode=off",
-      "dockerOpts": ""
+      "flags": "",
+      "dockerOpts": "",
+      "cache": "off"
     }
   ],
   "checks": {
@@ -161,9 +163,9 @@
       "short": "1 CPU, cache off",
       "expected": "not used",
       "outcome": "info",
-      "why": "Baseline run: -XX:AOTMode=off switches the cache off on purpose.",
+      "why": "Baseline run: the same image started without -XX:AOTCache, as a plain JVM. The ~1,400 classes still counted come from the JDK's own default class archive (CDS), which a JVM uses when it isn't given an AOT cache.",
       "ifUnexpected": [
-        "The flag -XX:AOTMode=off didn't take effect; check the scenario's flags."
+        "The baseline used the app's cache: check that demo.sh still starts \"cache\": \"off\" scenarios without -XX:AOTCache (run_app)."
       ]
     },
     "cache.extra-props": {
@@ -195,7 +197,7 @@
       "short": "ZGC",
       "expected": "not used",
       "outcome": "no-benefit-expected",
-      "why": "The JDK 25 AOT cache can't be used with ZGC: ZGC runs without compressed oops, and the cache was built with them (the JVM's message below says exactly that). JDK 26 adds ZGC support (JEP 516). The JVM warns 'Unable to use AOT cache' and starts normally, without it.",
+      "why": "The JDK 25 AOT cache can't be used with ZGC: ZGC runs without compressed oops, and the cache was built with them (the JVM's message below says exactly that). JDK 26 adds ZGC support (JEP 516). The JVM warns 'Unable to use AOT cache' and starts without it. A rejected cache also switches off the JDK's default class archive (0 classes from any archive), so this start is a little slower than a plain JVM's.",
       "ifUnexpected": [
         "If the cache WAS used, the image's JDK is probably 26 or newer, where ZGC is supported. Check the JDK in the Run table and update this expectation."
       ]
@@ -206,9 +208,9 @@
       "short": "cache off",
       "expected": "not used",
       "outcome": "info",
-      "why": "Baseline run: -XX:AOTMode=off switches the cache off on purpose.",
+      "why": "Baseline run: the same image started without -XX:AOTCache, as a plain JVM. The ~1,400 classes still counted come from the JDK's own default class archive (CDS), which a JVM uses when it isn't given an AOT cache.",
       "ifUnexpected": [
-        "The flag -XX:AOTMode=off didn't take effect; check the scenario's flags."
+        "The baseline used the app's cache: check that demo.sh still starts \"cache\": \"off\" scenarios without -XX:AOTCache (run_app)."
       ]
     },
     "guardrail": {
@@ -268,7 +270,7 @@
       },
       "cpu1-off": {
         "expect": "baseline",
-        "why": "Baseline: 1 CPU with the cache off."
+        "why": "Baseline: 1 CPU, the image started as a plain JVM (no -XX:AOTCache)."
       },
       "extra-props": {
         "compareTo": "prod",
@@ -284,14 +286,14 @@
       "zgc": {
         "compareTo": "cache-off",
         "expect": "no-benefit-expected",
-        "why": "With the cache unusable, ZGC starts about as fast as the cache-off baseline: no benefit, as expected on JDK 25.",
+        "why": "With the cache unusable, ZGC starts about as fast as the cache-off baseline (a little slower: ZGC itself, and a rejected cache leaves the JVM without its default class archive too): no benefit, as expected on JDK 25.",
         "ifUnexpected": [
           "If ZGC was much faster than cache-off, check its cache check: the JDK may be 26+, where ZGC can use the cache."
         ]
       },
       "cache-off": {
         "expect": "baseline",
-        "why": "Baseline: prod flags with the cache off."
+        "why": "Baseline: prod flags, the image started as a plain JVM (no -XX:AOTCache)."
       }
     }
   },

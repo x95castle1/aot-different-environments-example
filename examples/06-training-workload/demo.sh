@@ -3,11 +3,11 @@
 #
 # Three images of the same app, all measured in the "real" dev1 environment (compose.yml: this example's own
 # Config Server, Vault and Mongo, dev1's own credentials), never in the training stack:
-#   untrained          no AOT cache at all
+#   untrained          no AOT cache: a plain JVM
 #   context-trained    cache trained in the build on startup only (-Dspring.context.exit=onRefresh)
 #   workload-trained   cache trained by training-pipeline.sh with the request mix in run-workload.sh
 # Per image, RUNS fresh starts (round-robin, data reset before each): startup time, first request,
-# and the first WARMUP_REQUESTS requests (warm-up). Plus one run counting classes from the cache.
+# and the first WARMUP_REQUESTS requests (warm-up). Plus one run counting where the loaded classes came from.
 # Then the workload-trained image as dev1 and as prod1.
 # Expected results: expectations.json. Writes reports/06-training-workload/<run>/report.md.
 #
@@ -85,13 +85,17 @@ time_workload() {
 # seconds_of_first <n>: stdin = run-workload.sh's output; the total time of its first <n> requests
 seconds_of_first() { awk -v n="$1" 'NR <= n && $2 ~ /^[0-9.]+$/ {t += $2} END {printf "%.3f", t}'; }
 
-# count_classes <evidence>: the classes the app (started with CLASS_LOG) has loaded so far, and how many came from
-# the AOT cache. Sets TOTAL, CACHED and FROM_JARS; saves the counts as raw/<evidence>.
+# count_classes <evidence>: the classes the app (started with CLASS_LOG) has loaded so far, by where they came from.
+# Sets TOTAL and:
+#   CACHED      from a class archive: the image's AOT cache (untrained: the JDK's own default archive, CDS)
+#   FROM_FILES  read from the jars or the JDK's runtime image: what a cache saves
+#   GENERATED   created at runtime (lambdas, proxies): the JDK 25 cache can't hold these
+# Saves the counts as raw/<evidence>.
 count_classes() {
-  read -r CACHED TOTAL < <(docker exec "$NAME" sh -c 'echo "$(grep -c "shared objects file" /tmp/cl.log) $(grep -c "source:" /tmp/cl.log)"')
-  FROM_JARS=$((TOTAL - CACHED))
-  printf 'classes loaded (startup + %s requests): %s, from the AOT cache: %s, from the jars: %s\n' \
-    "$WARMUP_REQUESTS" "$TOTAL" "$CACHED" "$FROM_JARS" | save_evidence "$1"
+  read -r CACHED TOTAL FROM_FILES < <(docker exec "$NAME" sh -c 'echo "$(grep -c "shared objects file" /tmp/cl.log) $(grep -c "source:" /tmp/cl.log) $(grep -cE "source: (file|jrt):" /tmp/cl.log)"')
+  GENERATED=$((TOTAL - CACHED - FROM_FILES))
+  printf 'classes loaded (startup + %s requests): %s, from a class archive: %s, read from the jars or the JDK image: %s, generated at runtime: %s\n' \
+    "$WARMUP_REQUESTS" "$TOTAL" "$CACHED" "$FROM_FILES" "$GENERATED" | save_evidence "$1"
 }
 
 # add_timings <image> <startup> <first> <early> <warmup>: one timed start's results (FAIL: it didn't start)
@@ -130,7 +134,7 @@ train() {
 
 show_images() {
   step "The three images"
-  note "  untrained         no AOT cache at all"
+  note "  untrained         no AOT cache: a plain JVM"
   note "  context-trained   cache recorded in docker build by only starting the app (Spring context up, JVM exits"
   note "                    before any request): startup code only"
   note "  workload-trained  cache recorded by training-pipeline.sh while the app served real requests: startup + request-path code"
@@ -187,27 +191,31 @@ time_image() {
 # ---------------------------------------------------------------------------------------------------- classes
 
 # count_cached_classes: per image, one start in dev1 with class-load logging, then the workload: how many classes
-# came from the AOT cache, and how many still had to be loaded from the jars
+# came from a class archive, how many still had to be read from the jars or the JDK image, and how many were
+# generated at runtime
 count_cached_classes() {
-  step "Classes loaded in dev1 during startup + ${WARMUP_REQUESTS} requests: from the AOT cache vs from the jars"
-  local img s context_jars="" workload_jars=""
+  step "Classes loaded in dev1 during startup + ${WARMUP_REQUESTS} requests, by where they came from"
+  note "  class archive = the image's AOT cache (untrained: the JDK's own default archive, which a plain JVM uses)"
+  note "  generated     = created at runtime (lambdas, proxies): the JDK 25 cache can't hold these"
+  local img s context_files="" workload_files=""
   for img in "${IMAGES[@]}"; do
     s=$(short "$img")
     reset_data dev1
     start_app dev1 "$img" "$CLASS_LOG" || { fail "${img}: did not start"; continue; }
     ./run-workload.sh "http://localhost:${PORT}" "$WARMUP_REQUESTS" 1 42 >/dev/null || true
     count_classes "${s}.classes.txt"
-    printf '  %-17s %6s classes loaded, %6s from the AOT cache, %5s from the jars\n' "$img" "$TOTAL" "$CACHED" "$FROM_JARS"
+    printf '  %-17s %6s classes loaded: %6s from a class archive, %5s from the jars or the JDK image, %4s generated\n' \
+      "$img" "$TOTAL" "$CACHED" "$FROM_FILES" "$GENERATED"
     expect "cache.${s}" "" "$(aot_verdict "$CACHED" "$TOTAL")" "" "${s}.classes.txt"
-    expect "outside.${s}" "" "${FROM_JARS} classes"
+    expect "outside.${s}" "" "${FROM_FILES} read from the jars or the JDK image, ${GENERATED} generated at runtime"
     case $s in
-      context)  context_jars=$FROM_JARS ;;
-      workload) workload_jars=$FROM_JARS ;;
+      context)  context_files=$FROM_FILES ;;
+      workload) workload_files=$FROM_FILES ;;
     esac
   done
   stop_apps
-  if [[ -n "$context_jars" && -n "$workload_jars" ]]; then
-    expect fewer-outside "" "$([[ $workload_jars -lt $context_jars ]] && echo yes || echo no)" "" workload.classes.txt
+  if [[ -n "$context_files" && -n "$workload_files" ]]; then
+    expect fewer-outside "" "$([[ $workload_files -lt $context_files ]] && echo yes || echo no)" "" workload.classes.txt
   fi
 }
 
@@ -267,7 +275,7 @@ check_environment() {
   expect env.mongo-ping   "$env" "$(jq -r '.mongo.ping' <<<"$info")" "" "$evidence"
   expect env.cache        "$env" "$(aot_verdict "$CACHED" "$TOTAL")" "" "${env}.classes.txt"
   expect env.jvm          "$env" "${flags} (max heap ${heap} MB)"
-  expect env.timing       "$env" "startup ${st}s, first request ${FIRST}s, ${FROM_JARS} classes loaded from the jars"
+  expect env.timing       "$env" "startup ${st}s, first request ${FIRST}s, ${FROM_FILES} classes read from the jars or the JDK image"
   # shellcheck disable=SC2059  # ROW_FORMAT is a format
   ROWS+=("$(printf "$ROW_FORMAT" "$env" "$profiles" "$files" "$db" "max-page $page" "${heap} MB" "${CACHED}/${TOTAL}")")
 }
