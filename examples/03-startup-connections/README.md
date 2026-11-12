@@ -42,7 +42,7 @@ make test     # unit tests (local JDK 25)
     Fetching config from server at : http://config-server.invalid:8888   <- skipped at build time
     Vault location [secret/connections-app] not resolvable: ...
     [stage-1 5/6] RUN --network=none java -XX:AOTCacheOutput=... -Xmx1g  <- JDK AOT cache training, offline
-    [stage-1 6/6] RUN --network=none java -XX:AOTCache=... -XX:AOTMode=on -Xmx256m   <- the cache check, offline
+    [stage-1 6/6] RUN --network=none java -XX:AOTCache=... -XX:AOTMode=on -Xmx1g   <- the cache check, offline
 == 3. Start dev1
     Located environment: name=connections-app, profiles=[dev,dev1]
     Started ConnectionsApplication in 0.495 seconds

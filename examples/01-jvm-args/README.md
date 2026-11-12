@@ -91,8 +91,8 @@ The labels, expected values and explanations come from [`expectations.json`](exp
 - [`Dockerfile`](Dockerfile) sets the prod flags once
   (`ENV JDK_JAVA_OPTIONS=-XX:+UseG1GC -XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError`) and trains the cache
   with them (`-XX:AOTCacheOutput`, `-Dspring.context.exit=onRefresh`, `--network=none`), plus an explicit `-Xmx1g`
-  so the build machine's RAM doesn't decide the heap (see Pitfalls). A second `RUN` then starts the app once with
-  `-XX:AOTMode=on -Xmx256m`: a cache that a small environment couldn't use fails the build.
+  so the build machine's RAM doesn't decide the heap (see Pitfalls). A second `RUN` then starts the app once more
+  with `-XX:AOTMode=on` and the same heap: a cache that the environments couldn't use fails the build.
 - Prod doesn't set `JDK_JAVA_OPTIONS`, so it runs with exactly the trained flags. Every other environment overrides it.
 - The JVM checks compatibility at startup (`-XX:AOTMode=auto`, the default): use the cache if possible, otherwise warn
   and continue.

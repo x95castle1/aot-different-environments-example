@@ -110,8 +110,8 @@ RUN --network=none java \
       -Dspring.context.exit=onRefresh \
       -jar /app/app.jar
 RUN --network=none java \
-      -XX:AOTCache=/app/app.aot -XX:AOTMode=on -Xmx256m \
-      ...the same options...                # the check: fails the build if a small heap can't use the cache
+      -XX:AOTCache=/app/app.aot -XX:AOTMode=on -Xmx1g \
+      ...the same options...                # the check: fails the build if the cache can't be used
 USER app
 ENTRYPOINT ["java", "-XX:AOTCache=/app/app.aot", "-Dspring.aot.enabled=true", "-jar", "/app/app.jar"]
 ```
@@ -133,8 +133,10 @@ What happens in the first `RUN`:
 7. **The JVM exits normally,** and JDK 25 assembles what it recorded into `/app/app.aot` (~76 MB), which stays in
    the image.
 
-The second `RUN` starts the app once more with a 256 MB heap and `-XX:AOTMode=on`, which turns an unusable cache
-into an error: a cache that a small environment couldn't use fails the build instead of being shipped.
+The second `RUN` starts the app once more with `-XX:AOTMode=on`, which turns an unusable cache into an error: a
+cache that the environments couldn't use fails the build instead of being shipped. It uses the training run's
+heap. Any heap under ~32 GB tests the same thing, and this one the app has just started in, so the step can't
+fail for lack of memory.
 
 So the cache holds only what ran during startup: Spring, your beans, the Mongo and Vault clients, Tomcat setup. No
 request was ever served, so the request path is missing (validation, JSON, Mongo queries, error handling). Those
