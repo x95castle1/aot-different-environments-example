@@ -58,17 +58,17 @@ Then each instance is started again on its own, `RUNS` times, and the run ends w
 
 ```
   Two different AOTs in the table below: the "JDK AOT cache" pre-loads classes and is on for every row;
-  Spring AOT (build-time bean code) is on for every row except "prod1 without Spring AOT", so the
-  "vs no Spring AOT" column is what Spring AOT alone is worth for each environment.
+  Spring AOT (build-time bean code) is on for every row except "prod1 without Spring AOT", which uses a
+  cache trained for its own start. So the "vs no Spring AOT" column is what Spring AOT alone is worth.
 
 == Startup times (median of each scenario's runs; each column compares every row with one scenario; * = the comparison its outcome is judged on)
   scenario                  JDK AOT cache   runs (s)                       median  vs no Spring AOT  vs prod1  outcome
-  dev1                      USED 7558/7717  0.243 0.236 0.249 0.24 0.245   0.243s  1.8× faster       +1% *     unchanged
-  dev2                      USED 7558/7719  0.237 0.313 0.252 0.244 0.244  0.244s  1.8× faster       +2% *     unchanged
-  qa1                       USED 7558/7718  0.242 0.238 0.243 0.244 0.246  0.243s  1.8× faster       +1% *     unchanged
-  prod1                     USED 7558/7720  0.242 0.237 0.24 0.245 0.237   0.24s   1.8× faster *     -         improved
-  prod1 + debug profile     USED 7558/7723  0.241 0.24 0.242 0.277 0.244   0.242s  1.8× faster       +1% *     unchanged
-  prod1 without Spring AOT  USED 7558/8397  0.429 0.426 0.479 0.426 0.436  0.429s  -                 -         baseline
+  dev1                      USED 7577/7729  0.302 0.297 0.296 0.303 0.303  0.302s  -32%              ±0% *     unchanged
+  dev2                      USED 7577/7739  0.301 0.304 0.303 0.324 0.305  0.304s  -31%              +1% *     unchanged
+  qa1                       USED 7577/7729  0.299 0.3 0.297 0.3 0.301      0.3s    -32%              -1% *     unchanged
+  prod1                     USED 7577/7740  0.305 0.306 0.302 0.3 0.298    0.302s  -32% *            -         improved
+  prod1 + debug profile     USED 7577/7743  0.309 0.304 0.299 0.339 0.303  0.304s  -31%              +1% *     unchanged
+  prod1 without Spring AOT  USED 7751/8047  0.445 0.443 0.439 0.444 0.427  0.443s  -                 -         baseline
 ```
 
 There are two different AOTs here, and only one of them changes:

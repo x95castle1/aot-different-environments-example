@@ -202,25 +202,27 @@ trainer, drive the workload, stop, copy the cache, build, push. Promote the fina
 ## What you'll see (Apple Silicon, Docker Desktop, JDK 25, 5 runs)
 
 ```
-== Classes loaded in dev1 during startup + 300 requests: from the AOT cache vs from the jars
-  untrained          13581 classes loaded,      0 from the AOT cache, 13581 from the jars
-  context-trained    13845 classes loaded,  11685 from the AOT cache,  2160 from the jars
-  workload-trained   13957 classes loaded,  13641 from the AOT cache,   316 from the jars
+== Classes loaded in dev1 during startup + 300 requests, by where they came from
+  class archive = the image's AOT cache (untrained: the JDK's own default archive, which a plain JVM uses)
+  generated     = created at runtime (lambdas, proxies): the JDK 25 cache can't hold these
+  untrained          13579 classes loaded:   1463 from a class archive,  9407 from the jars or the JDK image, 2709 generated
+  context-trained    13853 classes loaded:  11700 from a class archive,  1445 from the jars or the JDK image,  708 generated
+  workload-trained   13956 classes loaded:  13642 from a class archive,    20 from the jars or the JDK image,  294 generated
 
 == Timings (median of each scenario's runs; each column compares every row with one scenario; * = the comparison its outcome is judged on)
   scenario                               runs                             median  vs untrained   vs context-trained  outcome
-  startup time · untrained               1.171 1.112 1.197 1.094 1.114 s  1.114s  -              -                   baseline
-  startup time · context-trained         0.452 0.521 0.467 0.47 0.443 s   0.467s  2.4× faster *  -                   improved
-  startup time · workload-trained        0.424 0.44 0.389 0.411 0.416 s   0.416s  2.7× faster    -11% *              unchanged
-  first request · untrained              63.9 62.2 62 60.8 59.3 ms        62 ms   -              -                   baseline
-  first request · context-trained        50.1 57 53.2 53.9 97.1 ms        54 ms   -13%           -                   info
-  first request · workload-trained       27.7 26.9 27.2 28.3 26.4 ms      27 ms   2.3× faster    2× faster *         improved
-  first 50 requests · untrained          0.233 0.254 0.247 0.262 0.217 s  0.247s  -              -                   baseline
-  first 50 requests · context-trained    0.211 0.224 0.257 0.211 0.278 s  0.224s  -9%            -                   info
-  first 50 requests · workload-trained   0.173 0.171 0.185 0.159 0.160 s  0.171s  -31%           -24%                info
-  first 300 requests · untrained         0.746 0.725 0.742 0.694 0.691 s  0.725s  -              -                   baseline
-  first 300 requests · context-trained   0.748 0.735 0.881 0.681 0.768 s  0.748s  +3%            -                   info
-  first 300 requests · workload-trained  0.559 0.588 0.592 0.505 0.522 s  0.559s  -23%           -25% *              improved
+  startup time · untrained               1.002 1.029 1.046 0.992 0.992 s  1.002s  -              -                   baseline
+  startup time · context-trained         0.431 0.447 0.411 0.481 0.418 s  0.431s  2.3× faster *  -                   improved
+  startup time · workload-trained        0.384 0.384 0.436 0.387 0.381 s  0.384s  2.6× faster    -11% *              unchanged
+  first request · untrained              53.2 66.9 69 67.8 62.3 ms        67 ms   -              -                   baseline
+  first request · context-trained        62 78.2 52.6 55.6 54.6 ms        56 ms   -17%           -                   info
+  first request · workload-trained       29.6 28.2 25.9 26.6 27 ms        27 ms   2.5× faster    2.1× faster *       improved
+  first 50 requests · untrained          0.209 0.223 0.243 0.232 0.230 s  0.23s   -              -                   baseline
+  first 50 requests · context-trained    0.227 0.287 0.218 0.221 0.217 s  0.221s  -4%            -                   info
+  first 50 requests · workload-trained   0.186 0.166 0.163 0.165 0.170 s  0.166s  -28%           -25%                info
+  first 300 requests · untrained         0.658 0.647 0.710 0.699 0.678 s  0.678s  -              -                   baseline
+  first 300 requests · context-trained   0.752 0.784 0.666 0.715 0.736 s  0.736s  +9%            -                   info
+  first 300 requests · workload-trained  0.537 0.545 0.532 0.586 0.536 s  0.537s  -21%           -27% *              improved
 ```
 
 - Rows are grouped by what's measured; within each group, every row is compared with the same two scenarios:
@@ -230,25 +232,26 @@ trainer, drive the workload, stop, copy the cache, build, push. Promote the fina
 - **Startup** is the same with either cache (both ~2.5× faster than untrained). The workload cache holds more, but
   startup isn't slower.
 - **The first request** is over 2× faster. The startup-only cache leaves ~1,450 request-path classes to be read
-  from the jars on the first requests; the workload cache leaves ~20. The context-trained cache doesn't help here
-  (vs untrained), because it never saw a request.
+  from the jars on the first requests; the workload cache leaves ~20. The context-trained cache hardly helps here
+  (vs untrained, within noise), because it never saw a request.
 - **What no cache holds:** ~300 classes (~700 with the startup-only cache) are generated at runtime: lambdas and
   proxies. Those aren't missing training. The ~20 the workload cache still reads from the jars are classes it
   can't store either: ones that fail verification because an optional dependency isn't on the classpath, and
   ones from a signed jar.
-- **Warm-up**, across five runs on this machine:
-  - **first request**: 2.1–2.8× faster every time (~30 ms saved). This is the reliable gain;
-  - **first 300 requests**: 13–21% faster, or more (judged with a ±10% band);
-  - **first 50 requests**: anywhere from 10% to 1.7× faster. The ~30 ms gain is within the noise of a ~0.2 s total,
-    so this row is information only, not pass/fail.
+- **Warm-up**, across six runs on this machine:
+  - **first request**: 2–2.4× faster every time (~30 ms saved). This is the reliable gain;
+  - **first 300 requests**: 19–28% faster (judged with a ±10% band);
+  - **first 50 requests**: 23–30% faster here; another machine saw anywhere from 10% to 1.7×. The gain is a few
+    tens of milliseconds on a ~0.2 s total, close to run-to-run noise, so this row is information only, not
+    pass/fail.
 - The cache grows from ~76 MB (startup only) to ~92 MB (with the request path and method profiles).
 
 And the image you'd ship, in each environment:
 
 ```
   env    profiles    Config Server files (most specific first)                        database        tier setting   heap      AOT cache
-  dev1   dev,dev1    workload-app-dev1.yml, workload-app-dev.yml, workload-app.yml    workload_dev1   max-page 50    384 MB    13639/13963
-  prod1  prod,prod1  workload-app-prod1.yml, workload-app-prod.yml, workload-app.yml  workload_prod1  max-page 100   768 MB    13639/13965
+  dev1   dev,dev1    workload-app-dev1.yml, workload-app-dev.yml, workload-app.yml    workload_dev1   max-page 50    384 MB    13642/13966
+  prod1  prod,prod1  workload-app-prod1.yml, workload-app-prod.yml, workload-app.yml  workload_prod1  max-page 100   768 MB    13642/13967
 ```
 
 One image (the demo checks both run the same image ID), two environments: each loaded its own Config Server files,

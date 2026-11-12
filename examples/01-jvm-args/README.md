@@ -37,17 +37,17 @@ The run ends with this table in the terminal, then the verdict. The same table i
 
 ```
 == Startup times (median of each scenario's runs; each column compares every row with one scenario; * = the comparison its outcome is judged on)
-  scenario                           JDK AOT cache    runs (s)                       median  vs cache off                         vs prod (trained flags)  outcome
-  prod flags (trained with these)    USED 7505/7662   0.233 0.239 0.236 0.238 0.247  0.238s  2.4× faster *                        -                        improved
-  smaller heap (-Xmx256m)            USED 7505/7662   0.254 0.238 0.238 0.232 0.232  0.238s  2.4× faster                          ±0% *                    unchanged
-  bigger fixed heap (-Xms2g -Xmx2g)  USED 7505/7662   0.237 0.235 0.23 0.231 0.227   0.231s  2.5× faster                          -3% *                    unchanged
-  512 MB container, 50% RAM          USED 7505/7704   0.244 0.244 0.241 0.239 0.254  0.244s  2.4× faster                          +3% *                    unchanged
-  1 CPU                              USED 7505/7665   0.778 0.779 0.717 0.768 0.799  0.778s  1.9× faster (vs 1 CPU, cache off) *  -                        improved
-  1 CPU, cache off (baseline)        not used 0/7419  1.687 1.499 1.507 1.502 1.498  1.502s  -                                    -                        baseline
-  extra -D props + GC logging        USED 7505/7662   0.232 0.232 0.231 0.23 0.233   0.232s  2.5× faster                          -3% *                    unchanged
-  Parallel GC                        USED 7505/7662   0.231 0.225 0.227 0.232 0.233  0.231s  2.5× faster                          -3% *                    unchanged
-  ZGC                                not used 0/7420  0.64 0.635 0.611 0.644 0.611   0.635s  +9% *                                2.7× slower              no-benefit-expected
-  cache off (baseline)               not used 0/7463  0.581 0.579 0.579 0.584 0.58   0.58s   -                                    -                        baseline
+  scenario                           JDK AOT cache       runs (s)                       median  vs cache off                       vs prod (trained flags)  outcome
+  prod flags (trained with these)    USED 7565/7721      0.29 0.312 0.306 0.309 0.309   0.309s  1.9× faster *                      -                        improved
+  smaller heap (-Xmx256m)            USED 7565/7724      0.304 0.293 0.297 0.301 0.302  0.301s  1.9× faster                        -3% *                    unchanged
+  bigger fixed heap (-Xms2g -Xmx2g)  USED 7565/7721      0.289 0.302 0.293 0.293 0.292  0.293s  2× faster                          -5% *                    unchanged
+  512 MB container, 50% RAM          USED 7565/7721      0.215 0.219 0.21 0.217 0.207   0.215s  2.7× faster                        -30% *                   unchanged
+  1 CPU                              USED 7565/7719      0.715 0.707 0.699 0.692 0.766  0.707s  2× faster (vs 1 CPU, cache off) *  -                        improved
+  1 CPU, cache off (baseline)        not used 1403/7412  1.381 1.304 1.409 1.386 1.342  1.381s  -                                  -                        baseline
+  extra -D props + GC logging        USED 7565/7731      0.297 0.304 0.302 0.305 0.328  0.304s  1.9× faster                        -2% *                    unchanged
+  Parallel GC                        USED 7565/7721      0.289 0.286 0.293 0.285 0.286  0.286s  2× faster                          -7% *                    unchanged
+  ZGC                                not used 0/7461     0.626 0.622 0.655 0.635 0.633  0.633s  +10% *                             2× slower                no-benefit-expected
+  cache off (baseline)               not used 1403/7422  0.578 0.592 0.576 0.574 0.578  0.578s  -                                  -                        baseline
 ```
 
 - **JDK AOT cache** column: whether the JVM used the cache, and how many of the loaded classes came from it. The
@@ -70,10 +70,10 @@ Reading it:
 - With compatible flags, startup stays at the prod baseline, because the same ~7,500 classes come from the cache.
 - One CPU is slower for every app (less CPU). The cache is still used and still helps; compare with the "cache off"
   baseline row.
-- The 512 MB container can start ~25% *faster* than prod. That isn't the cache: a memory limit makes the JVM start
-  fewer JIT compiler threads (at most one C2 thread per ~200 MB of free memory, so 2 here), and it only shows where
-  the container sees 16 or more CPUs, because below that the JVM's default is already small. Fewer compiler
-  threads shorten startup and lengthen warm-up, so it is not a tuning tip:
+- The 512 MB container starts 25-30% *faster* than prod here. That isn't the cache: a memory limit makes the JVM
+  start fewer JIT compiler threads (at most one C2 thread per ~200 MB of free memory, so 2 here). It only shows
+  where the container sees 16 or more CPUs (18 on this machine), because below that the JVM's default is already
+  small. Fewer compiler threads shorten startup and lengthen warm-up, so it is not a tuning tip:
   [experiments/jit-compiler-threads](../../experiments/jit-compiler-threads). Faster than prod still counts as
   `unchanged`.
 - ZGC starts about as fast as "cache off" (a little slower): the JVM printed `Unable to use AOT cache` and started

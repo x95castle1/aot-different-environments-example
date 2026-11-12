@@ -102,12 +102,12 @@
     },
     "cache.aot-only": {
       "group": "Startup modes (prod1): JDK AOT cache used?", "label": "Spring AOT only: JDK AOT cache", "short": "Spring AOT only", "expected": "not used", "outcome": "info",
-      "why": "Baseline mode: started without -XX:AOTCache on purpose. The ~1,500 classes still counted come from the JDK's own default class archive (CDS), which every JVM uses, not from the app's AOT cache.",
+      "why": "Baseline mode: started without -XX:AOTCache on purpose. The ~1,500 classes still counted come from the JDK's own default class archive (CDS), which a plain JVM uses, not from the app's AOT cache.",
       "ifUnexpected": ["The image's JDK_JAVA_OPTIONS may now point at the cache: check the ENV lines in the Dockerfile."]
     },
     "cache.neither": {
       "group": "Startup modes (prod1): JDK AOT cache used?", "label": "Plain JVM - No Cache: JDK AOT cache", "short": "Plain JVM - No Cache", "expected": "not used", "outcome": "info",
-      "why": "Baseline mode: started without -XX:AOTCache on purpose. The ~1,500 classes still counted come from the JDK's own default class archive (CDS), which every JVM uses, not from the app's AOT cache.",
+      "why": "Baseline mode: started without -XX:AOTCache on purpose. The ~1,500 classes still counted come from the JDK's own default class archive (CDS), which a plain JVM uses, not from the app's AOT cache.",
       "ifUnexpected": ["The image's JDK_JAVA_OPTIONS may now point at the cache: check the ENV lines in the Dockerfile."]
     },
     "failfast.configserver": {

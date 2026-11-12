@@ -41,10 +41,11 @@ make test     # unit tests (local JDK 25)
     [build 5/6] RUN --network=none ... ./mvnw -B -o ... package          <- Spring AOT, offline
     Fetching config from server at : http://config-server.invalid:8888   <- skipped at build time
     Vault location [secret/connections-app] not resolvable: ...
-    [stage-1 5/5] RUN --network=none java -XX:AOTCacheOutput=...         <- JDK AOT cache training, offline
+    [stage-1 5/6] RUN --network=none java -XX:AOTCacheOutput=... -Xmx1g  <- JDK AOT cache training, offline
+    [stage-1 6/6] RUN --network=none java -XX:AOTCache=... -XX:AOTMode=on -Xmx256m   <- the cache check, offline
 == 3. Start dev1
     Located environment: name=connections-app, profiles=[dev,dev1]
-    Started ConnectionsApplication in 0.52 seconds
+    Started ConnectionsApplication in 0.495 seconds
     Connected at startup: sources=[configserver:...connections-app-dev1.yml (3 keys), vault:secret/connections-app/dev1 (2 keys) ...] mongo={... ping=ok}
 == 4. Rotate the Mongo password in Vault, restart the same image
   password fingerprint: sha256:5cd5949a776b -> sha256:67e28ae71bf0   ✓ Mongo ping with the new password: ok
