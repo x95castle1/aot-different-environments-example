@@ -70,6 +70,12 @@ Reading it:
 - With compatible flags, startup stays at the prod baseline, because the same ~7,500 classes come from the cache.
 - One CPU is slower for every app (less CPU). The cache is still used and still helps; compare with the "cache off"
   baseline row.
+- The 512 MB container can start ~25% *faster* than prod. That isn't the cache: a memory limit makes the JVM start
+  fewer JIT compiler threads (at most one C2 thread per ~200 MB of free memory, so 2 here), and it only shows where
+  the container sees 16 or more CPUs, because below that the JVM's default is already small. Fewer compiler
+  threads shorten startup and lengthen warm-up, so it is not a tuning tip:
+  [experiments/jit-compiler-threads](../../experiments/jit-compiler-threads). Faster than prod still counts as
+  `unchanged`.
 - ZGC starts about as fast as "cache off" (a little slower): the JVM printed `Unable to use AOT cache` and started
   without it, and without the JDK's default class archive.
 

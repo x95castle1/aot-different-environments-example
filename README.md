@@ -84,6 +84,8 @@ scripts/                          the shared demo/report harness:
   report*.jq, render-report.sh      turn a run's records + expectations.json into results.json and report.md
   examples.sh, status.sh, logs.sh   `make examples` (fzf picker), `make status`, `make logs`
 docs/reading-reports.md           how to read the reports (outcomes, verdicts, timing rules, schema)
+experiments/jit-compiler-threads/ a side investigation: why a memory limit can make startup faster (JIT compiler
+                                  threads vs startup and time to peak), with its scripts and raw results
 ```
 
 ## Demo shortcuts (not for production)

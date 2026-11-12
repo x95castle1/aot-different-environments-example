@@ -96,7 +96,7 @@
       "expected": "USED",
       "why": "The build-time cache covers the classes loaded during startup.",
       "ifUnexpected": [
-        "Rebuild: make -C examples/06-training-workload image"
+        "Rebuild: make -C examples/06-training-workload train"
       ]
     },
     "cache.workload": {
@@ -150,7 +150,7 @@
       "label": "profiles",
       "why": "APP_ENV + APP_ENV_INDEX become '<tier>,<tier><index>' at startup (example 02).",
       "ifUnexpected": [
-        "Check start_app in demo.sh passes APP_ENV / APP_ENV_INDEX for this environment."
+        "Check APP_ENV / APP_ENV_INDEX for this environment's service in compose.yml."
       ]
     },
     "env.config-files": {

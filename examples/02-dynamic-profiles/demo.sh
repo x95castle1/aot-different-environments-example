@@ -105,6 +105,7 @@ check_instances() {
     check_instance "$id" "$name" "$aot" "$port" "$exp_profiles" "$exp_db" "$exp_notifier" "$pitfall"
   done < <(instances)
 
+  (( ${#ROWS[@]} > 0 )) || return 0   # no instance started: their "started" checks already failed
   step "Summary"
   printf '  %s%-26s %-10s %-17s %-13s %-14s %-9s %s%s\n' "$C_BOLD" "instance" "Spring AOT" "profiles" "app.db-name" "notifier" "@Profile" "@ConditionalOnProperty" "$C_RESET"
   printf '  %s\n' "${ROWS[@]}"

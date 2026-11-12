@@ -141,7 +141,7 @@
       "short": "512 MB container",
       "expected": "USED",
       "outcome": "works",
-      "why": "A container memory limit and MaxRAMPercentage only change heap sizing.",
+      "why": "A container memory limit and MaxRAMPercentage change heap sizing and how many JIT compiler threads the JVM starts. The cache depends on neither.",
       "ifUnexpected": [
         "Read the JVM's own message in the evidence file (from -Xlog:aot)."
       ]
@@ -261,7 +261,7 @@
       "mem512": {
         "compareTo": "prod",
         "expect": "unchanged",
-        "why": "Same cache benefit as prod: a container memory limit doesn't matter."
+        "why": "Same cache benefit as prod: a container memory limit doesn't affect the cache. It can make this start faster than prod, though. The JVM starts at most one C2 compiler thread per ~200 MB of free memory, so 512 MB caps it at 2; where the container sees 16 or more CPUs the default is 8, and fewer compiler threads start ~25% faster (and warm up more slowly). Faster than prod still counts as unchanged. See experiments/jit-compiler-threads."
       },
       "cpu1": {
         "compareTo": "cpu1-off",
