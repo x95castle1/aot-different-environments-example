@@ -53,7 +53,8 @@ one() {
     long="$long $(rps 10000 "$l0" "$l1")"
   done
   [[ -n "$long" ]] && st="$st long_rps=[${long# }]"
-  threads=$(docker exec "$id" sh -c 'echo "c1=$(grep -c "compiler thread C1" /tmp/jit.log) c2=$(grep -c "compiler thread C2" /tmp/jit.log)"') \
+  # "Added ...": the log also has a "Removing compiler thread ..." line for every thread the JVM retires
+  threads=$(docker exec "$id" sh -c 'echo "c1=$(grep -c "Added.*compiler thread C1" /tmp/jit.log) c2=$(grep -c "Added.*compiler thread C2" /tmp/jit.log)"') \
     || threads="c1=? c2=?"
   printf '%s %s startup=%s warmup300=%s cold_rps=%s warm_rps=%s\n' "$name" "$threads" "$st" \
     "$(awk -v a="$w0" -v b="$w1" 'BEGIN {printf "%.3f", b - a}')" "$(rps 3000 "$c0" "$c1")" "$(rps 6000 "$s0" "$s1")"

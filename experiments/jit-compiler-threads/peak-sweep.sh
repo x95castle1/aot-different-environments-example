@@ -5,10 +5,11 @@
 #
 #   ./peak-sweep.sh                                    # 2 rounds, 8 phases of 20000 requests
 #   ROUNDS=1 PHASES=4 ONLY="nolimit-default nolimit-4" ./peak-sweep.sh
+#   WORKERS=16 ONLY=nolimit-default ./peak-sweep.sh   # more load: does the plateau move? Then it's the load path's
 #
 # Per (round, config): a fresh prod1 with empty data, seeded with run-workload.sh's first 300 requests, then PHASES
-# phases of PER_PHASE read-only GETs (60% list by customer, 30% get by id, 10% stats) over 8 keep-alive curl
-# workers. Read-only, so the data stays fixed and the curve shows the JIT, not a growing collection.
+# phases of PER_PHASE read-only GETs (60% list by customer, 30% get by id, 10% stats) over WORKERS (8) keep-alive
+# curl workers. Read-only, so the data stays fixed and the curve shows the JIT, not a growing collection.
 # Prints: <config> startup=<s> rps=[phase1 phase2 ...]
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -16,7 +17,7 @@ cd "$HERE/../../examples/06-training-workload"
 ROUNDS=${ROUNDS:-2}
 PHASES=${PHASES:-8}
 PER_PHASE=${PER_PHASE:-20000}
-WORKERS=8
+WORKERS=${WORKERS:-8}
 ENVC=(docker compose -f compose.yml)
 NOLIMIT=(docker compose -f compose.yml -f "$HERE/nolimit.yml")
 # name | compose variant (1g = prod1 as compose.yml defines it, nolimit = its mem_limit removed) | extra JVM flags
@@ -43,6 +44,7 @@ configs() {
 # one <name> <variant> <flags>: start, seed, then the timed read-only phases
 one() {
   local name=$1 variant=$2 flags=$3 c id port st ids p i t0 t1 rps="" w pids fail=0
+  : > "$WORK/err"
   if [[ $variant == nolimit ]]; then c=("${NOLIMIT[@]}"); else c=("${ENVC[@]}"); fi
   "${ENVC[@]}" rm -sf app-dev1 app-prod1 >/dev/null 2>&1 || true
   "${ENVC[@]}" exec -T mongo mongosh --quiet -u root -p example --authenticationDatabase admin \
@@ -62,13 +64,14 @@ one() {
   configs "$port" "$ids"
   for ((p = 1; p <= PHASES; p++)); do
     t0=$(now); pids=()
-    # curl -f: a 404 (bad id) or 5xx fails the worker, and the line says "(curl errors)"
-    for w in "$WORK"/w*.cfg; do curl -fsS -K "$w" 2>>"$WORK/err" & pids+=($!); done
+    # curl -f --fail-early: the first 404 (bad id) or 5xx stops that worker, and the line says "(curl errors: ...)".
+    # Without --fail-early curl reports only its LAST request, so failed (and fast) requests would go unnoticed.
+    for w in "$WORK"/w*.cfg; do curl -fsS --fail-early -K "$w" 2>>"$WORK/err" & pids+=($!); done
     for w in "${pids[@]}"; do wait "$w" || fail=1; done
     t1=$(now)
     rps="$rps $(awk -v n="$PER_PHASE" -v a="$t0" -v b="$t1" 'BEGIN {printf "%.0f", n / (b - a)}')"
   done
-  printf '%s startup=%s rps=[%s]%s\n' "$name" "$st" "${rps# }" "$([[ $fail == 1 ]] && echo ' (curl errors)')"
+  printf '%s startup=%s rps=[%s]%s\n' "$name" "$st" "${rps# }" "$([[ $fail == 1 ]] && echo " (curl errors: $(head -1 "$WORK/err"))")"
 }
 
 for ((r = 1; r <= ROUNDS; r++)); do
