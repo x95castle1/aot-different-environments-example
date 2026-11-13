@@ -2,10 +2,11 @@
 # Example 02: one image (Spring AOT on), profiles decided at startup from APP_ENV + APP_ENV_INDEX.
 #
 #   1. Build the image (Dockerfile): Spring AOT (no profile active) + the JDK AOT cache
-#   2. Start six instances of the same image (instances in expectations.json)
-#   3. Check each one: profile-specific VALUES and a @Bean-method choice follow the environment, while
+#   2. Train a second JDK AOT cache, for the one instance that runs without Spring AOT (comparison only)
+#   3. Start six instances of the same image (instances in expectations.json)
+#   4. Check each one: profile-specific VALUES and a @Bean-method choice follow the environment, while
 #      @Profile / @ConditionalOnProperty beans are frozen at build time. One instance runs without Spring AOT.
-#   4. Time each instance on its own (RUNS starts) and count its classes from the AOT cache
+#   5. Time each instance on its own (RUNS starts) and count its classes from the AOT cache
 # Writes reports/02-dynamic-profiles/<run>/report.md.
 #
 # Each step is a function below; main, at the bottom, runs them in order.
@@ -21,7 +22,12 @@ export RUNS
 REVISION=${REVISION:-$(git rev-parse --short HEAD 2>/dev/null || echo unknown)}   # recorded in the image's labels
 OPTS=()            # the current instance's docker run options (set_opts)
 ROWS=()            # the summary table (check_instance)
-cleanup() { docker rm -f $(docker ps -aq --filter 'name=^aot-02-') >/dev/null 2>&1 || true; }
+# The instance without Spring AOT starts differently (Spring parses the configuration classes at startup), and the
+# image's cache wasn't trained on that. It gets its own cache, in this volume (train_comparison_cache).
+COMPARE_VOLUME=aot-02-no-spring-aot-cache
+COMPARE_CACHE=/cache/app.aot
+stop_containers() { docker rm -f $(docker ps -aq --filter 'name=^aot-02-') >/dev/null 2>&1 || true; }
+cleanup() { stop_containers; docker volume rm -f "$COMPARE_VOLUME" >/dev/null 2>&1 || true; }
 
 # ---------------------------------------------------------------------------------------------------- helpers
 
@@ -39,8 +45,9 @@ set_opts() {
 run_app() {
   local aot=$1; shift
   if [[ "$aot" == "off" ]]; then
-    # Same image and AOT cache, but without the AOT-generated bean definitions: Spring evaluates @Profile etc. at runtime.
-    docker run "$@" --entrypoint java "$IMAGE" -XX:AOTCache=/app/app.aot -jar /app/app.jar >/dev/null
+    # Same image without the AOT-generated bean definitions: Spring evaluates @Profile etc. at runtime. Its JDK AOT
+    # cache is the one trained for this start, so it differs from the other instances in Spring AOT only.
+    docker run "$@" -v "$COMPARE_VOLUME:/cache:ro" --entrypoint java "$IMAGE" "-XX:AOTCache=$COMPARE_CACHE" -jar /app/app.jar >/dev/null
   else
     docker run "$@" "$IMAGE" >/dev/null
   fi
@@ -66,6 +73,21 @@ build_image() {
   docker build -q --build-arg REVISION="$REVISION" -t "$IMAGE" . >/dev/null
 }
 
+# train_comparison_cache: a JDK AOT cache for "prod1 without Spring AOT", recorded the way the Dockerfile records the
+# image's cache (offline, the prod flags, an explicit heap, exit when the context is ready), just without
+# -Dspring.aot.enabled=true. With the image's own cache that start would also pay for ~650 configuration-processing
+# classes the cache never saw, and the comparison with prod1 would show more than Spring AOT.
+train_comparison_cache() {
+  step "Train a JDK AOT cache for the start without Spring AOT (comparison only)"
+  note "  docker run --network none ... java -XX:AOTCacheOutput=${COMPARE_CACHE} -Xmx1g -Dspring.context.exit=onRefresh -jar /app/app.jar"
+  docker volume create "$COMPARE_VOLUME" >/dev/null
+  local out
+  out=$(docker run --rm --network none --user root -v "$COMPARE_VOLUME:/cache" --entrypoint java "$IMAGE" \
+    "-XX:AOTCacheOutput=$COMPARE_CACHE" -Xmx1g -Dspring.context.exit=onRefresh -jar /app/app.jar 2>&1) || true
+  save_evidence no-spring-aot.training.log <<<"$out"
+  note "  $(grep -o 'AOTCache creation is complete.*' <<<"$out" || echo "no cache written: see raw/no-spring-aot.training.log")"
+}
+
 start_instances() {
   step "Starting six instances of ${IMAGE}"
   report_image "$IMAGE"
@@ -83,6 +105,7 @@ check_instances() {
     check_instance "$id" "$name" "$aot" "$port" "$exp_profiles" "$exp_db" "$exp_notifier" "$pitfall"
   done < <(instances)
 
+  (( ${#ROWS[@]} > 0 )) || return 0   # no instance started: their "started" checks already failed
   step "Summary"
   printf '  %s%-26s %-10s %-17s %-13s %-14s %-9s %s%s\n' "$C_BOLD" "instance" "Spring AOT" "profiles" "app.db-name" "notifier" "@Profile" "@ConditionalOnProperty" "$C_RESET"
   printf '  %s\n' "${ROWS[@]}"
@@ -120,7 +143,7 @@ check_instance() {
 # time_instances: the six instances above started at the same time and competed for CPU, so time each one
 # again on its own
 time_instances() {
-  cleanup
+  stop_containers
   step "Startup time per instance"
   note "  JDK AOT cache trained in the build with no profile active, with: $(image_jvm_flags "$IMAGE")"
   note "  ${RUNS} timed runs per instance, one at a time; Spring's \"Started ... in X seconds\""
@@ -134,8 +157,8 @@ time_instances() {
 
   echo
   note "  Two different AOTs in the table below: the \"JDK AOT cache\" pre-loads classes and is on for every row;"
-  note "  Spring AOT (build-time bean code) is on for every row except \"prod1 without Spring AOT\", so the"
-  note "  \"vs no Spring AOT\" column is what Spring AOT alone is worth for each environment."
+  note "  Spring AOT (build-time bean code) is on for every row except \"prod1 without Spring AOT\", which uses a"
+  note "  cache trained for its own start. So the \"vs no Spring AOT\" column is what Spring AOT alone is worth."
 }
 
 # time_instance <id> <name> <env> <index> <SPRING_PROFILES_ACTIVE> <aot>: classes from the AOT cache, then RUNS starts
@@ -144,10 +167,13 @@ time_instance() {
   step "$name"
   set_opts "$env" "$idx" "$spa"
 
-  local usage_script=$AOT_USAGE_SCRIPT
-  # Without Spring AOT: count the cache's classes for the same start command as run_app, without -Dspring.aot.enabled=true
-  if [[ "$aot" == "off" ]]; then usage_script=${AOT_USAGE_SCRIPT/ -Dspring.aot.enabled=true/}; fi
-  AOT_USAGE_SCRIPT=$usage_script aot_usage "${id}.aot-cache.txt" docker run --rm "${OPTS[@]}" --entrypoint sh "$IMAGE" -c
+  if [[ "$aot" == "off" ]]; then
+    # Without Spring AOT: count the classes for the same start command as run_app (its own cache, no -Dspring.aot.enabled=true)
+    aot_usage_with "-XX:AOTCache=$COMPARE_CACHE" "${id}.aot-cache.txt" \
+      docker run --rm "${OPTS[@]}" -v "$COMPARE_VOLUME:/cache:ro" --entrypoint sh "$IMAGE" -c
+  else
+    aot_usage "${id}.aot-cache.txt" docker run --rm "${OPTS[@]}" --entrypoint sh "$IMAGE" -c
+  fi
   expect "cache.${id}" "$name" "$AOT_VERDICT" "" "${id}.aot-cache.txt"
   note "  classes from JDK AOT cache: ${CACHED} / ${TOTAL}"
 
@@ -163,6 +189,7 @@ trap cleanup EXIT
 cleanup
 report_init 02-dynamic-profiles
 build_image
+train_comparison_cache
 start_instances
 check_instances
 time_instances

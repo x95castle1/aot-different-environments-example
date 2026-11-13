@@ -4,7 +4,7 @@
 # template. (The build stage is the same as in the other examples' Dockerfiles.)
 #
 #   eclipse-temurin:25-jre
-#   └─ untrained         (--target untrained)  the app, prod JVM flags, entrypoint; NO AOT cache.
+#   └─ untrained         (--target untrained)  the app, prod JVM flags, a plain-JVM entrypoint; NO AOT cache.
 #      │                                       training-pipeline.sh trains this exact image with a real workload,
 #      │                                       then Dockerfile.trained adds the cache on top -> workload-trained.
 #      └─ context-trained (default target)     + a cache recorded right here, in docker build, by only STARTING
@@ -52,9 +52,10 @@ ENV JDK_JAVA_OPTIONS="-XX:+UseG1GC -XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemor
 
 USER app
 EXPOSE 8080
-# -XX:AOTCache points at the cache a later layer adds (stage 3 below, or Dockerfile.trained). In this stage the
-# file doesn't exist yet: the JVM warns and runs without a cache.
-ENTRYPOINT ["java", "-XX:AOTCache=/app/app.aot", "-Dspring.aot.enabled=true", "-jar", "/app/app.jar"]
+# No -XX:AOTCache here: there is no cache yet, and pointing the JVM at a missing (or unusable) cache makes it
+# start with no class archive at all, not even the JDK's default one, so this stage wouldn't be a fair "no cache"
+# baseline. The stages that add app.aot (stage 3 below, Dockerfile.trained) set the entrypoint that uses it.
+ENTRYPOINT ["java", "-Dspring.aot.enabled=true", "-jar", "/app/app.jar"]
 
 ############################
 # 3. "context-trained" (default target): + a cache recorded in docker build by only STARTING the app.
@@ -65,6 +66,11 @@ USER root
 # Training run, step by step:
 #   - The JVM runs with the prod flags (JDK_JAVA_OPTIONS above), so the cache is recorded under prod settings.
 #     -XX:AOTCacheOutput records which classes get loaded and linked, plus method profiles.
+#   - -Xmx1g: docker build has no memory limit, so MaxRAMPercentage=75 would size the heap from the BUILD
+#     machine's RAM. Above ~43 GB that is a heap over 32 GB, which switches compressed oops off, and a cache
+#     recorded without them is rejected by every JVM that has them (any heap under ~32 GB). An explicit heap
+#     keeps the cache independent of where the image is built. Its size doesn't matter to the cache: an app
+#     that needs more to start can raise it (here and in the check below), staying under ~32 GB.
 #   - -Dspring.aot.enabled=true: Spring runs its build-time (Spring AOT) code, as in every environment.
 #   - build-time.yml points Config Server and Vault at unreachable .invalid hosts with fail-fast off, so those
 #     imports are skipped. --network=none proves nothing here needs Config Server, Vault or Mongo.
@@ -73,17 +79,29 @@ USER root
 #     server takes any request.
 #   - The JVM exits normally and JDK 25 assembles what it recorded into /app/app.aot (~76 MB).
 # Result: a cache of what runs during STARTUP only. Request-path code (validation, JSON, Mongo queries, error
-# handling) never ran, so ~2,150 of its classes are still loaded from the jars on the first requests. Training
+# handling) never ran, so ~1,450 of its classes are still read from the jars on the first requests. Training
 # with a real workload (training-pipeline.sh) covers that.
 RUN --network=none java \
-      -XX:AOTCacheOutput=/app/app.aot \
+      -XX:AOTCacheOutput=/app/app.aot -Xmx1g \
       -Dspring.aot.enabled=true \
       -Dspring.config.additional-location=optional:classpath:/build-time.yml \
       -Dspring.context.exit=onRefresh \
       -jar /app/app.jar \
  && ls -lh /app/app.aot
 
+# Check the cache: start once more with -XX:AOTMode=on, which turns an unusable cache into an error. A cache the
+# environments couldn't use fails the build here, instead of being shipped and silently ignored. The heap is
+# explicit again, and the same as in training: any heap under ~32 GB tests the same thing (compressed oops on),
+# and one the app has just started in can't make this step fail for lack of memory.
+RUN --network=none java \
+      -XX:AOTCache=/app/app.aot -XX:AOTMode=on -Xmx1g \
+      -Dspring.aot.enabled=true \
+      -Dspring.config.additional-location=optional:classpath:/build-time.yml \
+      -Dspring.context.exit=onRefresh \
+      -jar /app/app.jar
+
 USER app
+ENTRYPOINT ["java", "-XX:AOTCache=/app/app.aot", "-Dspring.aot.enabled=true", "-jar", "/app/app.jar"]
 
 ARG REVISION=unknown
 ARG CREATED=unknown

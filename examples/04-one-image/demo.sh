@@ -105,8 +105,10 @@ deploy_env() {
   ROWS+=("$(printf '%-6s %-14s %-48s %-26s %s' "$env" "${short:0:12}" "$(jq -r '.values["app.db-url"]' <<<"$info")" "$flags" "${CACHED}/${TOTAL}")")
 }
 
+# compare_envs: skipped when no environment started (their "started" checks already failed)
 compare_envs() {
   step "4. Across environments"
+  (( ${#IDS[@]} > 0 )) || { note "  no environment started: nothing to compare"; return 0; }
   expect across.images "" "$(count_distinct "${IDS[@]}")"
   expect across.builds "" "$(count_distinct "${BUILDS[@]}")"
   printf '\n  %s%-6s %-14s %-48s %-26s %s%s\n' "$C_BOLD" "env" "digest" "app.db-url" "heap flags" "JDK AOT cache" "$C_RESET"

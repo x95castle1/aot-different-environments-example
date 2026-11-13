@@ -20,7 +20,7 @@ Real environment systems are never contacted, and the training services are dele
 
 | Image | AOT cache | Recorded how | Holds |
 |---|---|---|---|
-| `untrained` | none | — | nothing; every class is loaded from the jars |
+| `untrained` | none | — | nothing: a plain JVM. The app and its libraries are read from the jars (JDK classes come from the JDK's own default class archive, as in any JVM) |
 | `context-trained` | yes | in `docker build`, by only **starting** the app: the Spring context comes up, then the JVM exits (`-Dspring.context.exit=onRefresh`) before any request | startup code only |
 | `workload-trained` | yes | in the pipeline (`training-pipeline.sh`), while the app **served real requests** against throwaway services | startup **and** request-path code (validation, JSON, Mongo queries, error handling) + method profiles |
 
@@ -80,16 +80,19 @@ examples' Dockerfiles.)
 ```
 eclipse-temurin:25-jre                      ← JRE_IMAGE in Dockerfile
 └─ workload-app:untrained                   ← stage "untrained": /app (app.jar + lib/), prod JDK_JAVA_OPTIONS,
-   │                                           user "app", ENTRYPOINT java -XX:AOTCache=/app/app.aot ...
+   │                                           user "app", ENTRYPOINT java ... -jar /app/app.jar (a plain JVM)
    ├─ workload-app:context-trained          ← stage "context-trained" (default target): + app.aot recorded in docker build
    └─ workload-app:workload-trained         ← Dockerfile.trained: + app.aot recorded by training-pipeline.sh (the only new layer)
+                                               both add -XX:AOTCache=/app/app.aot to the entrypoint
 ```
 
 ### `untrained`: no cache
 
-`docker build --target untrained` stops at the stage that has the app, the prod JVM flags and the entrypoint, but
-no `app.aot`. The entrypoint still passes `-XX:AOTCache=/app/app.aot`; with the file missing, the JVM prints a
-warning and runs without a cache. This image is the baseline, and it is what `training-pipeline.sh` trains.
+`docker build --target untrained` stops at the stage that has the app, the prod JVM flags and an entrypoint, but
+no `app.aot`. Its entrypoint doesn't pass `-XX:AOTCache`, so it starts as a plain JVM. (Pointing a JVM at a cache
+file that is missing or unusable isn't the same thing: it logs errors and runs with no class archive at all, not
+even the JDK's default one, a few percent slower than a plain JVM.) This image is the baseline, and it is what
+`training-pipeline.sh` trains. The two images that add `app.aot` also set the entrypoint that uses it.
 
 ### `context-trained`: cache recorded in `docker build` by only starting the app
 
@@ -101,31 +104,43 @@ comparison:
 FROM untrained AS context-trained
 USER root
 RUN --network=none java \
-      -XX:AOTCacheOutput=/app/app.aot \
+      -XX:AOTCacheOutput=/app/app.aot -Xmx1g \
       -Dspring.aot.enabled=true \
       -Dspring.config.additional-location=optional:classpath:/build-time.yml \
       -Dspring.context.exit=onRefresh \
       -jar /app/app.jar
+RUN --network=none java \
+      -XX:AOTCache=/app/app.aot -XX:AOTMode=on -Xmx1g \
+      ...the same options...                # the check: fails the build if the cache can't be used
 USER app
+ENTRYPOINT ["java", "-XX:AOTCache=/app/app.aot", "-Dspring.aot.enabled=true", "-jar", "/app/app.jar"]
 ```
 
-What happens in that `RUN`:
+What happens in the first `RUN`:
 
 1. **The JVM starts with the prod flags.** They come from the `JDK_JAVA_OPTIONS` the `untrained` stage set, so the
    cache is recorded under prod settings. `-XX:AOTCacheOutput` tells it to record which classes it loads and
    links, plus method profiles.
-2. **Spring starts with its build-time code** (`-Dspring.aot.enabled=true`), the same as in every environment.
-3. **The Config Server and Vault imports are skipped.** `build-time.yml` points them at unreachable `.invalid`
+2. **The heap is set explicitly** (`-Xmx1g`). `docker build` has no memory limit, so `MaxRAMPercentage=75` would
+   size the heap from the build machine's RAM. Above ~43 GB that is a heap over 32 GB, which switches compressed
+   oops off, and every normal-sized environment would then reject the cache.
+3. **Spring starts with its build-time code** (`-Dspring.aot.enabled=true`), the same as in every environment.
+4. **The Config Server and Vault imports are skipped.** `build-time.yml` points them at unreachable `.invalid`
    hosts with fail-fast off, and `--network=none` means nothing could connect anyway.
-4. **Every bean is created,** including the Mongo client, which doesn't connect until first use.
-5. **Spring stops right after startup** (`-Dspring.context.exit=onRefresh`): it exits as soon as the application
+5. **Every bean is created,** including the Mongo client, which doesn't connect until first use.
+6. **Spring stops right after startup** (`-Dspring.context.exit=onRefresh`): it exits as soon as the application
    context is ready, before the web server takes any requests.
-6. **The JVM exits normally,** and JDK 25 assembles what it recorded into `/app/app.aot` (~76 MB), which stays in
+7. **The JVM exits normally,** and JDK 25 assembles what it recorded into `/app/app.aot` (~76 MB), which stays in
    the image.
+
+The second `RUN` starts the app once more with `-XX:AOTMode=on`, which turns an unusable cache into an error: a
+cache that the environments couldn't use fails the build instead of being shipped. It uses the training run's
+heap. Any heap under ~32 GB tests the same thing, and this one the app has just started in, so the step can't
+fail for lack of memory.
 
 So the cache holds only what ran during startup: Spring, your beans, the Mongo and Vault clients, Tomcat setup. No
 request was ever served, so the request path is missing (validation, JSON, Mongo queries, error handling). Those
-are the ~2,150 classes still loaded from the jars on the first requests. The upside: it needs no network and no
+are the ~1,450 classes still read from the jars on the first requests. The upside: it needs no network and no
 services, just `docker build`.
 
 ### `workload-trained`: cache recorded by `training-pipeline.sh` while the app served real requests
@@ -138,6 +153,7 @@ services, just `docker build`.
 ARG BASE                       # workload-app:untrained, passed by training-pipeline.sh (--build-arg BASE=...)
 FROM ${BASE}
 COPY app.aot /app/app.aot      # the only new layer: no training data, secrets or tools
+ENTRYPOINT ["java", "-XX:AOTCache=/app/app.aot", "-Dspring.aot.enabled=true", "-jar", "/app/app.jar"]   # metadata, no layer
 ```
 
 The base is the untrained image itself, not a fresh build, because the cache only works with the same JDK build
@@ -188,49 +204,56 @@ trainer, drive the workload, stop, copy the cache, build, push. Promote the fina
 ## What you'll see (Apple Silicon, Docker Desktop, JDK 25, 5 runs)
 
 ```
-== Classes loaded in dev1 during startup + 300 requests: from the AOT cache vs from the jars
-  untrained          13581 classes loaded,      0 from the AOT cache, 13581 from the jars
-  context-trained    13845 classes loaded,  11685 from the AOT cache,  2160 from the jars
-  workload-trained   13957 classes loaded,  13641 from the AOT cache,   316 from the jars
+== Classes loaded in dev1 during startup + 300 requests, by where they came from
+  class archive = the image's AOT cache (untrained: the JDK's own default archive, which a plain JVM uses)
+  generated     = created at runtime (lambdas, proxies): the JDK 25 cache can't hold these
+  untrained          13579 classes loaded:   1463 from a class archive,  9407 from the jars or the JDK image, 2709 generated
+  context-trained    13853 classes loaded:  11700 from a class archive,  1445 from the jars or the JDK image,  708 generated
+  workload-trained   13956 classes loaded:  13642 from a class archive,    20 from the jars or the JDK image,  294 generated
 
 == Timings (median of each scenario's runs; each column compares every row with one scenario; * = the comparison its outcome is judged on)
   scenario                               runs                             median  vs untrained   vs context-trained  outcome
-  startup time · untrained               1.171 1.112 1.197 1.094 1.114 s  1.114s  -              -                   baseline
-  startup time · context-trained         0.452 0.521 0.467 0.47 0.443 s   0.467s  2.4× faster *  -                   improved
-  startup time · workload-trained        0.424 0.44 0.389 0.411 0.416 s   0.416s  2.7× faster    -11% *              unchanged
-  first request · untrained              63.9 62.2 62 60.8 59.3 ms        62 ms   -              -                   baseline
-  first request · context-trained        50.1 57 53.2 53.9 97.1 ms        54 ms   -13%           -                   info
-  first request · workload-trained       27.7 26.9 27.2 28.3 26.4 ms      27 ms   2.3× faster    2× faster *         improved
-  first 50 requests · untrained          0.233 0.254 0.247 0.262 0.217 s  0.247s  -              -                   baseline
-  first 50 requests · context-trained    0.211 0.224 0.257 0.211 0.278 s  0.224s  -9%            -                   info
-  first 50 requests · workload-trained   0.173 0.171 0.185 0.159 0.160 s  0.171s  -31%           -24%                info
-  first 300 requests · untrained         0.746 0.725 0.742 0.694 0.691 s  0.725s  -              -                   baseline
-  first 300 requests · context-trained   0.748 0.735 0.881 0.681 0.768 s  0.748s  +3%            -                   info
-  first 300 requests · workload-trained  0.559 0.588 0.592 0.505 0.522 s  0.559s  -23%           -25% *              improved
+  startup time · untrained               1.002 1.029 1.046 0.992 0.992 s  1.002s  -              -                   baseline
+  startup time · context-trained         0.431 0.447 0.411 0.481 0.418 s  0.431s  2.3× faster *  -                   improved
+  startup time · workload-trained        0.384 0.384 0.436 0.387 0.381 s  0.384s  2.6× faster    -11% *              unchanged
+  first request · untrained              53.2 66.9 69 67.8 62.3 ms        67 ms   -              -                   baseline
+  first request · context-trained        62 78.2 52.6 55.6 54.6 ms        56 ms   -17%           -                   info
+  first request · workload-trained       29.6 28.2 25.9 26.6 27 ms        27 ms   2.5× faster    2.1× faster *       improved
+  first 50 requests · untrained          0.209 0.223 0.243 0.232 0.230 s  0.23s   -              -                   baseline
+  first 50 requests · context-trained    0.227 0.287 0.218 0.221 0.217 s  0.221s  -4%            -                   info
+  first 50 requests · workload-trained   0.186 0.166 0.163 0.165 0.170 s  0.166s  -28%           -25%                info
+  first 300 requests · untrained         0.658 0.647 0.710 0.699 0.678 s  0.678s  -              -                   baseline
+  first 300 requests · context-trained   0.752 0.784 0.666 0.715 0.736 s  0.736s  +9%            -                   info
+  first 300 requests · workload-trained  0.537 0.545 0.532 0.586 0.536 s  0.537s  -21%           -27% *              improved
 ```
 
 - Rows are grouped by what's measured; within each group, every row is compared with the same two scenarios:
-  - **vs untrained**: what each cache is worth compared with no cache at all;
+  - **vs untrained**: what each cache is worth compared with a plain JVM;
   - **vs context-trained**: what workload training adds on top of the startup-only cache;
   - **\***: the comparison the outcome is judged on. The other rows are information only.
 - **Startup** is the same with either cache (both ~2.5× faster than untrained). The workload cache holds more, but
   startup isn't slower.
-- **The first request** is over 2× faster. The startup-only cache leaves ~2,150 request-path classes to be loaded
-  from the jars on the first requests; the workload cache leaves ~300. The context-trained cache barely helps here
-  (vs untrained), because it never saw a request.
-- **Warm-up**, across five runs on this machine:
-  - **first request**: 2.1–2.8× faster every time (~30 ms saved). This is the reliable gain;
-  - **first 300 requests**: 13–21% faster, or more (judged with a ±10% band);
-  - **first 50 requests**: anywhere from 10% to 1.7× faster. The ~30 ms gain is within the noise of a ~0.2 s total,
-    so this row is information only, not pass/fail.
+- **The first request** is over 2× faster. The startup-only cache leaves ~1,450 request-path classes to be read
+  from the jars on the first requests; the workload cache leaves ~20. The context-trained cache hardly helps here
+  (vs untrained, within noise), because it never saw a request.
+- **What no cache holds:** ~300 classes (~700 with the startup-only cache) are generated at runtime: lambdas and
+  proxies. Those aren't missing training. The ~20 the workload cache still reads from the jars are classes it
+  can't store either: ones that fail verification because an optional dependency isn't on the classpath, and
+  ones from a signed jar.
+- **Warm-up**, across six runs on this machine:
+  - **first request**: 2–2.4× faster every time (~30 ms saved). This is the reliable gain;
+  - **first 300 requests**: 19–28% faster (judged with a ±10% band);
+  - **first 50 requests**: 23–30% faster here; another machine saw anywhere from 10% to 1.7×. The gain is a few
+    tens of milliseconds on a ~0.2 s total, close to run-to-run noise, so this row is information only, not
+    pass/fail.
 - The cache grows from ~76 MB (startup only) to ~92 MB (with the request path and method profiles).
 
 And the image you'd ship, in each environment:
 
 ```
   env    profiles    Config Server files (most specific first)                        database        tier setting   heap      AOT cache
-  dev1   dev,dev1    workload-app-dev1.yml, workload-app-dev.yml, workload-app.yml    workload_dev1   max-page 50    384 MB    13639/13963
-  prod1  prod,prod1  workload-app-prod1.yml, workload-app-prod.yml, workload-app.yml  workload_prod1  max-page 100   768 MB    13639/13965
+  dev1   dev,dev1    workload-app-dev1.yml, workload-app-dev.yml, workload-app.yml    workload_dev1   max-page 50    384 MB    13642/13966
+  prod1  prod,prod1  workload-app-prod1.yml, workload-app-prod.yml, workload-app.yml  workload_prod1  max-page 100   768 MB    13642/13967
 ```
 
 One image (the demo checks both run the same image ID), two environments: each loaded its own Config Server files,
@@ -246,7 +269,7 @@ agents), plus the evidence in `raw/` (training log, class counts, final image hi
 - both caches are used;
 - startup is unchanged between the two caches;
 - the first request and the first 300 requests are faster with the workload cache (first 50 is shown, not judged);
-- fewer classes are loaded from the jars;
+- fewer classes are read from the jars;
 - the workload-trained image runs as dev1 and prod1 with each environment's own profiles, Config Server files, tier
   setting, database and Vault path, uses the AOT cache in both, and both run the same image.
 
@@ -257,8 +280,12 @@ explanations come from [`expectations.json`](expectations.json).
 
 - **Train with what prod runs:** Spring AOT on (`-Dspring.aot.enabled=true`), the prod JVM flags (the image's
   `JDK_JAVA_OPTIONS`), and the same image layers (final image `FROM` the trained one).
+- **Give the training run an explicit heap** (`-Xmx1g` in the Dockerfile and for the `trainer`). Neither
+  `docker build` nor the trainer has a memory limit, so a percentage-sized heap would follow the CI machine's RAM;
+  over 32 GB of heap it records a cache without compressed oops, which no smaller environment can use.
 - **Make the workload look like prod traffic:** the main endpoints, serialization, DB queries, error paths,
-  scheduled jobs. Paths the workload never touches stay uncached (the ~300 classes above).
+  scheduled jobs. Paths the workload never touches stay uncached and show up as classes read from the jars
+  (the "from the jars or the JDK image" count above: ~1,450 after startup-only training, ~20 after this workload).
 - **Stop cleanly with time to spare:** SIGTERM, not SIGKILL. JDK 25 assembles the cache after the app exits, so give
   the container a long stop timeout (`stop_grace_period: 300s` in [`training/compose.yml`](training/compose.yml)).
 - **Keep training out of the final image:** fake data, fake credentials, throwaway services. Only `app.aot` is

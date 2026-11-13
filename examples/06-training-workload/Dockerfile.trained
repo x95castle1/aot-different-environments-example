@@ -4,7 +4,7 @@
 #
 #   eclipse-temurin:25-jre
 #   └─ workload-app:untrained          <- BASE: the image training-pipeline.sh ran with -XX:AOTCacheOutput
-#      └─ workload-app:workload-trained   <- this file: + app.aot, nothing else
+#      └─ workload-app:workload-trained   <- this file: + app.aot, and the entrypoint that uses it
 #
 # BASE must be the EXACT image that was trained. The JVM only accepts a cache recorded with the same JDK
 # build and the same /app files (down to their sizes and timestamps); otherwise it warns and runs without it.
@@ -12,7 +12,8 @@
 # (--build-arg BASE=registry/workload-app@sha256:...), so a moved tag can't swap in a different build.
 #
 # Only app.aot is added: no training data, credentials or tools from the training run end up in the image.
-# The entrypoint (java -XX:AOTCache=/app/app.aot ...) and the prod JDK_JAVA_OPTIONS are inherited from BASE.
+# The entrypoint is BASE's plus -XX:AOTCache=/app/app.aot (metadata only, no layer); the prod JDK_JAVA_OPTIONS
+# are inherited from BASE.
 #
 # Build context: a directory that contains only app.aot.
 #   docker build -f Dockerfile.trained --build-arg BASE=workload-app:untrained -t workload-app:workload-trained <dir>
@@ -20,6 +21,7 @@
 ARG BASE
 FROM ${BASE}
 COPY app.aot /app/app.aot
+ENTRYPOINT ["java", "-XX:AOTCache=/app/app.aot", "-Dspring.aot.enabled=true", "-jar", "/app/app.jar"]
 
 ARG REVISION=unknown
 ARG CREATED=unknown

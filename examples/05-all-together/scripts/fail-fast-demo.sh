@@ -25,12 +25,15 @@ root_cause() {
 # ---------------------------------------------------------------------------------------------------- steps
 
 # start_broken <check id> <name> <docker compose run options...>: a one-off dev1 with one setting broken;
-# expected to refuse to start
+# expected to refuse to start.
+# -Dspring.context.exit=onRefresh: if the app does start, it exits (code 0) once the context is ready instead of
+# serving forever, so a broken fail-fast is reported as "started", not as a script that hangs. The Config Server and
+# Vault imports under test are resolved before that point.
 start_broken() {
   local id=$1 name=$2; shift 2
   step "$(jq -r --arg id "$id" '.checks[$id].label' "$EXPECT_FILE")"
   local output code=0 cause
-  output=$(docker compose run --rm --no-deps -T "$@" app-dev1 2>&1) || code=$?
+  output=$(docker compose run --rm --no-deps -T -e JAVA_TOOL_OPTIONS=-Dspring.context.exit=onRefresh "$@" app-dev1 2>&1) || code=$?
   cause=$(root_cause <<<"$output")
   save_evidence "failfast-${name}.log" <<<"$cause"
   sed 's/^/    /' <<<"$cause"

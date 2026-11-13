@@ -56,24 +56,28 @@ Where the values come from:
 
 ```
 scenario                                     JDK AOT cache        runs (s)           median  vs Plain JVM - No Cache  outcome
-prod1: Spring AOT + JDK AOT cache (default)  USED 10995/11611     0.469 0.42 0.416   0.42s   3.3× faster *            improved
-prod1: JDK AOT cache only                    USED 10995/12490     0.694 0.658 0.725  0.694s  2× faster                info
-prod1: Spring AOT only                       not used 1461/11302  1.041 1.053 1.067  1.053s  -24%                     info
-prod1: Plain JVM - No Cache                  not used 1461/11609  1.43 1.391 1.299   1.391s  -                        baseline
+prod1: Spring AOT + JDK AOT cache (default)  USED 10995/11611     0.408 0.411 0.427  0.411s  2.9× faster *            improved
+prod1: JDK AOT cache only                    USED 11260/12005     0.59 0.576 0.686   0.59s   2× faster                info
+prod1: Spring AOT only                       not used 1461/11302  0.977 1.022 0.996  0.996s  -17%                     info
+prod1: Plain JVM - No Cache                  not used 1461/11576  1.177 1.199 1.286  1.199s  -                        baseline
 
-Where the gain comes from (median startup, compared with the Plain JVM - No Cache at 1.391s): Spring AOT alone
-saves 0.338s, the JDK AOT cache alone saves 0.697s, and both together save 0.971s (each alone adds up to 1.035s).
+Where the gain comes from (median startup, compared with the Plain JVM - No Cache at 1.199s): Spring AOT alone
+saves 0.203s, the JDK AOT cache alone saves 0.609s, and both together save 0.788s (each alone adds up to 0.812s).
 ```
 
 - All four combinations of Spring AOT and the JDK AOT cache (on or off each) are timed, so what each one saves on
   its own is measured, not inferred from the order they're added in.
+- Each row has the cache it would really have. "JDK AOT cache only" starts without Spring AOT, which the image's
+  cache wasn't trained on, so `startup-compare.sh` first trains a cache for that start (the Dockerfile's training
+  run minus `-Dspring.aot.enabled=true`, into a volume). With the image's own cache that row would be ~0.1 s
+  slower and understate what the cache alone is worth.
 - **JDK AOT cache**: classes loaded from a cache, counted in one extra start per row. The ~1,460 in the two "off"
-  rows come from the JDK's own default class archive (CDS), which every JVM uses, not from the app's cache.
+  rows come from the JDK's own default class archive (CDS), which a plain JVM uses, not from the app's cache.
 - **vs Plain JVM - No Cache**: every row against the same image with neither Spring AOT nor the JDK AOT cache.
   Only the default row is judged (`*`); the two "only" rows are information (Spring AOT alone is ~15-25% faster,
   at or inside the ±25% noise band).
-- Without Spring AOT the cache is still used, but Spring loads ~850 more classes to process the configuration at
-  startup, and those aren't in the cache.
+- Without Spring AOT, Spring loads ~350 more classes to process the configuration at startup; the cache trained
+  for that start holds them.
 
 `make aot-check`: prod1, dev1 and qa1 load ~11,000 of ~11,650 classes from the cache; dev2 (ZGC) loads 0 and still starts.
 

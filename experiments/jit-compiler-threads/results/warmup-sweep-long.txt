@@ -1,0 +1,12 @@
+1g-default c1=17 c2=7 startup=0.582 long_rps=[2668 1973 1338 1077 863 788] warmup300=0.908 cold_rps=3261 warm_rps=3388
+1g-2 c1=1 c2=1 startup=0.482 long_rps=[2815 1892 1354 1079 866 777] warmup300=0.826 cold_rps=4480 warm_rps=3620
+1g-3 c1=1 c2=3 startup=0.523 long_rps=[2737 1905 1337 1072 861 784] warmup300=1.022 cold_rps=4443 warm_rps=3706
+nolimit-default c1=7 c2=17 startup=0.753 long_rps=[3128 1977 1345 1071 860 777] warmup300=0.915 cold_rps=2113 warm_rps=2551
+nolimit-3 c1=1 c2=3 startup=0.53 long_rps=[2746 1913 1335 1074 869 788] warmup300=1.042 cold_rps=3971 warm_rps=3778
+nolimit-4 c1=1 c2=5 startup=0.55 long_rps=[2747 1930 1342 1072 865 782] warmup300=0.936 cold_rps=4043 warm_rps=3459
+1g-default c1=15 c2=7 startup=0.566 long_rps=[2698 1958 1333 1072 860 784] warmup300=0.951 cold_rps=3587 warm_rps=3223
+1g-2 c1=1 c2=1 startup=0.495 long_rps=[2790 1907 1351 1075 859 778] warmup300=0.837 cold_rps=4217 warm_rps=3747
+1g-3 c1=1 c2=3 startup=0.519 long_rps=[2771 1898 1335 1070 862 783] warmup300=0.938 cold_rps=4468 warm_rps=3619
+nolimit-default c1=7 c2=17 startup=0.695 long_rps=[3037 1951 1340 1075 864 775] warmup300=0.992 cold_rps=2427 warm_rps=2403
+nolimit-3 c1=1 c2=3 startup=0.496 long_rps=[2756 1900 1339 1061 858 775] warmup300=0.989 cold_rps=4540 warm_rps=3595
+nolimit-4 c1=1 c2=5 startup=0.547 long_rps=[2701 1917 1335 1068 862 773] warmup300=0.949 cold_rps=4165 warm_rps=3426

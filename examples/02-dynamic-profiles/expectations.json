@@ -6,6 +6,7 @@
   "preview": {
     "steps": [
       "Build one image with Spring AOT",
+      "Train a second JDK AOT cache for the one start without Spring AOT (comparison only)",
       "Start it as dev1, dev2, qa1, prod1 (+ prod1 with a debug profile, + without Spring AOT)",
       "Check each one's profiles, profile-file values and @Bean-method choice",
       "Show the pitfall: @Profile / @ConditionalOnProperty beans are frozen at build time",
@@ -20,7 +21,7 @@
   },
   "tested": [
     "One image (profiles-app) built with Spring AOT and no profile active at build time.",
-    "Six instances of it: dev1, dev2, qa1, prod1 (profiles from APP_ENV + APP_ENV_INDEX), prod1 plus SPRING_PROFILES_ACTIVE=debug, and prod1 without Spring AOT (same image and JDK AOT cache, minus Spring AOT's generated bean code).",
+    "Six instances of it: dev1, dev2, qa1, prod1 (profiles from APP_ENV + APP_ENV_INDEX), prod1 plus SPRING_PROFILES_ACTIVE=debug, and prod1 without Spring AOT (same image, minus Spring AOT's generated bean code, with a JDK AOT cache trained for that start so the two differ in Spring AOT only).",
     "For each: active profiles, values from application-<profile>.yml, which Notifier the @Bean method chose, and whether the two pitfall beans exist (@Profile(\"prod\") and @ConditionalOnProperty).",
     "Then each instance again on its own: once with class-load logging, to count how many classes came from the JDK AOT cache (trained in the build with no profile active), and RUNS times to time Spring's startup (median reported)."
   ],
@@ -41,7 +42,7 @@
     },
     "aot": {
       "group": "Startup", "label": "Spring AOT generated code in use", "short": "Spring AOT on/off as intended",
-      "why": "The image starts with -Dspring.aot.enabled=true; 'prod1 without Spring AOT' overrides the entrypoint without it (but keeps the JDK AOT cache).",
+      "why": "The image starts with -Dspring.aot.enabled=true; 'prod1 without Spring AOT' overrides the entrypoint without it (and uses a JDK AOT cache trained for that start).",
       "ifUnexpected": ["Check the image's ENTRYPOINT (docker image inspect) still passes -Dspring.aot.enabled=true."]
     },
     "profiles": {
@@ -116,8 +117,8 @@
     },
     "cache.prod1-no-spring-aot": {
       "group": "JDK AOT cache used?", "label": "JDK AOT cache used", "expected": "USED",
-      "why": "The JDK AOT cache doesn't depend on Spring AOT: the JDK, classpath and JVM flags are the same, so the JVM uses it. Without Spring AOT, Spring loads extra classes to process the configuration at startup; those weren't in the training run and come from the jar. So this instance's startup differs from prod1 only by Spring AOT.",
-      "ifUnexpected": ["Read the JVM's own message in the evidence file (from -Xlog:aot).", "Check that demo.sh still starts this instance with -XX:AOTCache=/app/app.aot."]
+      "why": "This instance uses a JDK AOT cache trained for its own start: the same image, flags and steps as the image's cache, without -Dspring.aot.enabled=true (demo.sh, train_comparison_cache). The image's own cache was trained with Spring AOT on; used here it would leave ~650 configuration-processing classes to be read from the jars, and the comparison with prod1 would show that as well as Spring AOT. With its own cache this instance's startup differs from prod1 only by Spring AOT.",
+      "ifUnexpected": ["Did the training run write the cache? Read raw/no-spring-aot.training.log.", "Read the JVM's own message in the evidence file (from -Xlog:aot)."]
     }
   },
   "timings": {
@@ -145,8 +146,8 @@
         "why": "Same image, JVM flags and JDK AOT cache as prod1. Only the profiles and the config files they load differ, which costs nothing measurable."
       },
       "prod1": {
-        "label": "prod1", "compareTo": "prod1-no-spring-aot", "expect": "improved",
-        "why": "What Spring AOT is worth here: the same image and JDK AOT cache without Spring AOT is slower, because Spring then parses the configuration classes and evaluates their conditions at every startup. That is what you get in exchange for the bean graph being fixed at build time.",
+        "label": "prod1", "compareTo": "prod1-no-spring-aot", "expect": "improved", "band": 0.15,
+        "why": "What Spring AOT is worth here: the same image without Spring AOT is slower even with a JDK AOT cache trained for that start, because Spring then parses the configuration classes and evaluates their conditions at every startup. That is what you get in exchange for the bean graph being fixed at build time. The gain is about 30%, so this is judged with a ±15% band.",
         "ifUnexpected": [
           "Check the 'Spring AOT generated code in use' checks: true for prod1, false for prod1 without Spring AOT.",
           "Was something else running? Check `make status`, then rerun with RUNS=10."
@@ -158,7 +159,7 @@
       },
       "prod1-no-spring-aot": {
         "label": "prod1 without Spring AOT", "expect": "baseline",
-        "why": "Baseline: prod1 from the same image, still with the JDK AOT cache, but without Spring AOT's generated bean code."
+        "why": "Baseline: prod1 from the same image without Spring AOT's generated bean code, with a JDK AOT cache trained for that start."
       }
     }
   },

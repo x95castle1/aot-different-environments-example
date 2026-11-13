@@ -7,11 +7,11 @@ Stack: Spring Boot 4.0.9, Spring Cloud 2025.1.4, Java 25, Maven, Docker Compose.
 
 | # | Question | Example | Run | What you'll see |
 |---|---|---|---|---|
-| 1 | JVM arguments vary per environment (prod as the workaround) | [01-jvm-args](examples/01-jvm-args) | `make examples EX=01` | One image, 10 flag scenarios: compatible flags keep ~0.3 s startup from the cache; ZGC falls back (~0.8 s); `AOTMode=on` makes that an error |
-| 2 | Active profiles vary per environment/index, not fixed at build time | [02-dynamic-profiles](examples/02-dynamic-profiles) | `make examples EX=02` | `APP_ENV`+`APP_ENV_INDEX` → profiles at startup; values follow each env, while `@Profile` beans are frozen by AOT (shown without Spring AOT for contrast); every env starts as fast as prod1 from the same cache, and Spring AOT makes it ~1.6× faster |
+| 1 | JVM arguments vary per environment (prod as the workaround) | [01-jvm-args](examples/01-jvm-args) | `make examples EX=01` | One image, 10 flag scenarios: compatible flags keep ~0.3 s startup from the cache (a plain JVM: ~0.6 s); ZGC falls back (~0.6 s); `AOTMode=on` makes that an error |
+| 2 | Active profiles vary per environment/index, not fixed at build time | [02-dynamic-profiles](examples/02-dynamic-profiles) | `make examples EX=02` | `APP_ENV`+`APP_ENV_INDEX` → profiles at startup; values follow each env, while `@Profile` beans are frozen by AOT (shown without Spring AOT for contrast); every env starts as fast as prod1 from the same cache, and Spring AOT makes it ~30% faster |
 | 3 | Connect to Config Server, Vault, Mongo at startup; nothing reachable at build time | [03-startup-connections](examples/03-startup-connections) | `make examples EX=03` | Build under `--network=none`; startup pulls config + secrets and connects; secret rotation without rebuild; fail-fast when anything is missing |
 | 4 | Same build deployed to all environments | [04-one-image](examples/04-one-image) | `make examples EX=04` | Build once, push, deploy the digest to dev1 → qa1 → prod1; image scan finds no env config; all use the AOT cache |
-| 6 | A complex app needs warming up: how do you train the AOT cache with a real workload? | [06-training-workload](examples/06-training-workload) | `make examples EX=06` | Pipeline training against throwaway services: same startup, first request 2.3× faster, first 300 requests 10–20% faster, 314 vs 2,158 classes loaded from the jars; the trained image then runs as dev1 and prod1 |
+| 6 | A complex app needs warming up: how do you train the AOT cache with a real workload? | [06-training-workload](examples/06-training-workload) | `make examples EX=06` | Pipeline training against throwaway services: same startup, first request ~2× faster, first 300 requests ~20–25% faster, 20 vs ~1,450 classes read from the jars; the trained image then runs as dev1 and prod1 |
 | ★ | All of the above at once | [05-all-together](examples/05-all-together) | `make examples EX=05` | Four environments, one image, real Config Server/Vault/Mongo, per-env JVM flags |
 
 ```bash
@@ -56,7 +56,9 @@ Rules that keep one image working everywhere:
    endpoint exposure.
 4. **Keep integrations enabled at build time.** Imports are `optional:` and fail-fast is off only during the build
    (`build-time.yml`). At runtime `fail-fast: true` makes them mandatory again.
-5. **Train the AOT cache with the prod flags** and deploy by digest. Other environments override `JDK_JAVA_OPTIONS`;
+5. **Train the AOT cache with the prod flags and an explicit heap, and check it in the build.** `docker build` has
+   no memory limit, so a percentage-sized heap follows the build machine; above ~32 GB it records a cache that no
+   normal-sized environment can use. Deploy by digest. Other environments override `JDK_JAVA_OPTIONS`;
    incompatible flags fall back safely.
 
 ## Layout
@@ -82,6 +84,8 @@ scripts/                          the shared demo/report harness:
   report*.jq, render-report.sh      turn a run's records + expectations.json into results.json and report.md
   examples.sh, status.sh, logs.sh   `make examples` (fzf picker), `make status`, `make logs`
 docs/reading-reports.md           how to read the reports (outcomes, verdicts, timing rules, schema)
+experiments/jit-compiler-threads/ a side investigation: why a memory limit can make startup faster (JIT compiler
+                                  threads vs startup and time to peak), with its scripts and raw results
 ```
 
 ## Demo shortcuts (not for production)

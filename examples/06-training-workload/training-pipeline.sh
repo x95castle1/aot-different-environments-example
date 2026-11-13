@@ -5,7 +5,7 @@
 #      (and the usual build-time-trained one  docker build (default target)          -> workload-app:context-trained)
 #   2. Start throwaway services               docker compose -f training/compose.yml up config-server vault mongo
 #   3. Run the untrained image against them   docker compose -f training/compose.yml up trainer
-#                                             (java -XX:AOTCacheOutput=/tmp/app.aot ..., prod flags, Spring AOT on)
+#                                             (java -XX:AOTCacheOutput=/tmp/app.aot -Xmx1g ..., prod flags, Spring AOT on)
 #   4. Drive the workload                     run-workload.sh (the same request mix the app sees in prod)
 #   5. Stop it cleanly                        docker compose ... stop trainer: SIGTERM -> clean exit -> JVM writes
 #                                             app.aot (stop_grace_period 300s), then docker compose ... cp it out
@@ -94,7 +94,7 @@ start_trainer() {
   step "3. Run the untrained image against them, recording a cache"
   "${TRAINING[@]}" up -d trainer >/dev/null 2>&1
   note "  docker compose -f training/compose.yml up -d trainer"
-  note "  trainer: java -XX:AOTCacheOutput=/tmp/app.aot -Dspring.aot.enabled=true -jar /app/app.jar"
+  note "  trainer: java -XX:AOTCacheOutput=/tmp/app.aot -Xmx1g -Dspring.aot.enabled=true -jar /app/app.jar"
   note "  (prod JVM flags from the image's JDK_JAVA_OPTIONS: $(image_jvm_flags workload-app:untrained))"
   local ok=yes
   wait_for_http "$TRAINER/actuator/health" 90 || ok=no

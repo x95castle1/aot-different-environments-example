@@ -13,7 +13,7 @@
     "answer": "Yes: one image runs as four environments; Spring AOT + the AOT cache start prod1 about 3x faster."
   },
   "answer": {
-    "pass": "Yes. The same image ran as dev1, dev2, qa1 and prod1. Each got its own profiles, Config Server settings, Vault secrets and Mongo database, saw only its own data, and used its own JVM flags. dev1, qa1 and prod1 used the AOT cache; dev2 runs ZGC on purpose and fell back to a normal start, as expected on JDK 25. Against the real Config Server, Vault and Mongo, Spring AOT + the AOT cache started prod1 much faster than the same image as a plain JVM (no Spring AOT, no cache); the report also shows what each one saves on its own.",
+    "pass": "Yes. The same image ran as dev1, dev2, qa1 and prod1. Each got its own profiles, Config Server settings, Vault secrets and Mongo database, saw only its own data, and used its own JVM flags. dev1, qa1 and prod1 used the AOT cache; dev2 runs ZGC on purpose and fell back to a start without the cache, as expected on JDK 25. Against the real Config Server, Vault and Mongo, Spring AOT + the AOT cache started prod1 much faster than the same image as a plain JVM (no Spring AOT, no cache); the report also shows what each one saves on its own.",
     "fail": "Not as expected: at least one result differs from the known behaviour. See 'Unexpected results' for what differed and what to check.",
     "inconclusive": "Everything works, but some startup times varied too much between runs to judge the gain. Close other workloads and rerun (make -C examples/05-all-together startup-compare RUNS=5)."
   },
@@ -21,7 +21,7 @@
     "One image (demo-app) started as four environments against this example's own Config Server, Vault and MongoDB (compose.yml), each with its own APP_ENV/APP_ENV_INDEX, Vault token and JVM flags.",
     "Per environment: profiles, where its settings came from, Mongo connection with the password from Vault, the audit sink chosen at startup, the API key from Vault guarding writes, and data isolation.",
     "Per environment: whether the JVM used the AOT cache with that environment's JVM flags (dev2 runs ZGC on purpose).",
-    "Startup time of prod1 against the real services, four ways from the same image (Spring AOT on or off × JDK AOT cache on or off): one start each that counts the classes loaded from the JDK AOT cache, then RUNS timed starts each."
+    "Startup time of prod1 against the real services, four ways from the same image (Spring AOT on or off × JDK AOT cache on or off): one start each that counts the classes loaded from the JDK AOT cache, then RUNS timed starts each. The start with the cache but without Spring AOT uses a cache trained for that start, so each row has the cache it would really have."
   ],
   "noiseBand": 0.25,
   "checks": {
@@ -87,7 +87,7 @@
     },
     "cache.zgc": {
       "group": "JDK AOT cache per environment", "label": "JDK AOT cache with ZGC", "short": "JDK AOT cache unusable with ZGC", "expected": "not used", "outcome": "no-benefit-expected",
-      "why": "dev2 runs ZGC on purpose. The JDK 25 AOT cache can't be used with ZGC (ZGC runs without compressed oops, which the cache was built with), so the JVM starts normally without it.",
+      "why": "dev2 runs ZGC on purpose. The JDK 25 AOT cache can't be used with ZGC (ZGC runs without compressed oops, which the cache was built with), so the JVM starts without it (and, because the cache was rejected, without the JDK's default class archive: 0 classes from any archive).",
       "ifUnexpected": ["If the cache was used, the JDK is probably 26+ (ZGC support, JEP 516). Check the JDK in the Run table."]
     },
     "cache.full": {
@@ -97,17 +97,17 @@
     },
     "cache.cache-only": {
       "group": "Startup modes (prod1): JDK AOT cache used?", "label": "JDK AOT cache only: JDK AOT cache", "short": "JDK AOT cache only", "expected": "USED",
-      "why": "Turning Spring AOT off doesn't make the cache unusable: the JDK, classpath and JVM flags still match the training run. Spring then also loads classes that aren't in the cache, to process the configuration at startup (example 02 shows the same).",
-      "ifUnexpected": ["Read the JVM's message in the evidence (from -Xlog:aot)."]
+      "why": "This start uses a JDK AOT cache trained for it: the same image, flags and steps as the image's cache, without -Dspring.aot.enabled=true (scripts/startup-compare.sh, train_cache_without_spring_aot). The image's own cache was trained with Spring AOT on; used here it would leave ~850 configuration-processing classes to be read from the jars and understate what the cache alone is worth (example 02 explains the same).",
+      "ifUnexpected": ["Did the training run write the cache? Read raw/cache-only.training.log.", "Read the JVM's message in the evidence (from -Xlog:aot)."]
     },
     "cache.aot-only": {
       "group": "Startup modes (prod1): JDK AOT cache used?", "label": "Spring AOT only: JDK AOT cache", "short": "Spring AOT only", "expected": "not used", "outcome": "info",
-      "why": "Baseline mode: started without -XX:AOTCache on purpose. The ~1,500 classes still counted come from the JDK's own default class archive (CDS), which every JVM uses, not from the app's AOT cache.",
+      "why": "Baseline mode: started without -XX:AOTCache on purpose. The ~1,500 classes still counted come from the JDK's own default class archive (CDS), which a plain JVM uses, not from the app's AOT cache.",
       "ifUnexpected": ["The image's JDK_JAVA_OPTIONS may now point at the cache: check the ENV lines in the Dockerfile."]
     },
     "cache.neither": {
       "group": "Startup modes (prod1): JDK AOT cache used?", "label": "Plain JVM - No Cache: JDK AOT cache", "short": "Plain JVM - No Cache", "expected": "not used", "outcome": "info",
-      "why": "Baseline mode: started without -XX:AOTCache on purpose. The ~1,500 classes still counted come from the JDK's own default class archive (CDS), which every JVM uses, not from the app's AOT cache.",
+      "why": "Baseline mode: started without -XX:AOTCache on purpose. The ~1,500 classes still counted come from the JDK's own default class archive (CDS), which a plain JVM uses, not from the app's AOT cache.",
       "ifUnexpected": ["The image's JDK_JAVA_OPTIONS may now point at the cache: check the ENV lines in the Dockerfile."]
     },
     "failfast.configserver": {
@@ -131,7 +131,7 @@
       "full":     { "label": "prod1: Spring AOT + JDK AOT cache (default)", "compareTo": "neither", "expect": "improved",
                     "why": "Spring AOT skips bean-definition work at startup, and the AOT cache skips class loading/linking. Together they beat the same image as a plain JVM (no Spring AOT, no cache), even with real network round trips to Config Server and Vault." },
       "cache-only": { "label": "prod1: JDK AOT cache only", "compareTo": "neither", "expect": "info",
-                    "why": "Information only: what the JDK AOT cache alone is worth here (Spring AOT off). Not judged; the default row is the one judged." },
+                    "why": "Information only: what the JDK AOT cache alone is worth here (Spring AOT off, with a cache trained for that start). Not judged; the default row is the one judged." },
       "aot-only": { "label": "prod1: Spring AOT only", "compareTo": "neither", "expect": "info",
                     "why": "Information only: what Spring AOT alone is worth here (JDK AOT cache off). Not judged, because it's only about 20% faster, inside the ±25% noise band; the default row is the one judged." },
       "neither":  { "label": "prod1: Plain JVM - No Cache", "expect": "baseline", "why": "Baseline: the same image without Spring AOT or the AOT cache." }

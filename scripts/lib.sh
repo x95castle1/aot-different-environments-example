@@ -9,6 +9,7 @@
 #   record_timing <id> <secs...> startup times for a scenario; judged at render time against its baseline
 #   save_evidence <name>         stdin -> raw/<name> in the report
 #   aot_usage <name> <cmd...>    run AOT_USAGE_SCRIPT via <cmd...>; sets CACHED, TOTAL, AOT_VERDICT; saves evidence
+#   aot_usage_with "<java options>" <name> <cmd...>   the same, starting the app with other java options
 #   finish                       in the process that called report_init: render report.md/results.json, print summary
 #
 # A library: sourcing it only defines functions and settings, nothing runs. Sections: output, one demo at a time,
@@ -135,7 +136,8 @@ expect() {
   local excerpt=""
   if [[ -n "$evidence" && -f "$RAW/$evidence" ]]; then
     # Logs: the end is where errors are. Other evidence: the start is the summary.
-    if [[ "$evidence" == *.log ]]; then excerpt=$(grep -v '^\s*$' "$RAW/$evidence" | tail -6 | cut -c1-220)
+    # (|| true: an empty log has no line for grep to match, which must not stop the demo under set -e + pipefail)
+    if [[ "$evidence" == *.log ]]; then excerpt=$(grep -v '^\s*$' "$RAW/$evidence" | tail -6 | cut -c1-220 || true)
     else excerpt=$(head -6 "$RAW/$evidence" | cut -c1-220); fi
   fi
   jq -c -n --arg id "$id" --arg subject "$subject" --arg label "$label" --arg expected "$expected" \
@@ -313,6 +315,16 @@ aot_usage() {
   AOT_VERDICT=$(aot_verdict "${CACHED:-0}" "${TOTAL:-0}")
   { echo "classes loaded from the JDK AOT cache: ${CACHED} / ${TOTAL}"
     tail -n +2 <<<"$out" | sed -E 's/^\[[0-9.]+s\]//'; } | save_evidence "$name"
+}
+
+# aot_usage_with "<java options>" <evidence name> <command...>: aot_usage, starting the app with these java options
+# instead of the image's ENTRYPOINT ones. "" is a plain JVM: no AOT cache, no Spring AOT. Without the image's cache
+# the classes counted come from the JDK's own default class archive (CDS), which a plain JVM uses.
+aot_usage_with() {
+  local options=$1; shift
+  local image_start="java -XX:AOTCache=/app/app.aot -Dspring.aot.enabled=true -jar"
+  [[ "$AOT_USAGE_SCRIPT" == *"$image_start"* ]] || { echo "BUG: AOT_USAGE_SCRIPT no longer starts with '$image_start'" >&2; exit 3; }
+  AOT_USAGE_SCRIPT=${AOT_USAGE_SCRIPT/"$image_start"/java ${options:+$options }-jar} aot_usage "$@"
 }
 
 # image_jvm_flags <image>: the JDK_JAVA_OPTIONS baked into an image (the flags the AOT cache was trained with)

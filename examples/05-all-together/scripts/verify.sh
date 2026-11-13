@@ -68,8 +68,10 @@ check_env() {
   IMAGE_IDS+=("$(docker inspect --format '{{.Image}}' "$(docker compose ps -q "app-${env}")")")
 }
 
+# check_across: skipped when no environment started (their "started" checks already failed)
 check_across() {
   step "across environments"
+  (( ${#IMAGE_IDS[@]} > 0 )) || { note "  no environment started: nothing to compare"; return 0; }
   expect across.images "" "$(count_distinct "${IMAGE_IDS[@]}")"
   note "  image: $(printf '%s\n' "${IMAGE_IDS[@]}" | sort -u | head -1)"
   expect across.secrets "" "$(count_distinct "${FINGERPRINTS[@]}")"

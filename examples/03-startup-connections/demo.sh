@@ -35,12 +35,17 @@ start_dev1() { docker compose up -d --no-deps --force-recreate app-dev1 >/dev/nu
 
 # start_broken <check id> <name> <docker compose run options...>: a one-off dev1 with one dependency broken;
 # expected to refuse to start. Keeps the root cause (the exception lines), not the stack frames.
+# -Dspring.context.exit=onRefresh: if the app does start, it exits (code 0) once the context is ready instead of
+# serving forever, so a broken fail-fast is reported as "started", not as a demo that hangs. The Config Server and
+# Vault imports under test are resolved before that point.
 start_broken() {
   local id=$1 name=$2; shift 2
   local code=0
-  docker compose run --rm --no-deps -T "$@" app-dev1 > "$OUT/failfast.log" 2>&1 || code=$?
-  grep -E "Application run failed|Exception|Caused by|Status 403|permission denied" "$OUT/failfast.log" | grep -vE "^\s*(at |\* )" \
-    | sed -E 's/^.* (ERROR|WARN) .* -- //' | cut -c1-200 | head -8 | save_evidence "failfast-${name}.log"
+  docker compose run --rm --no-deps -T -e JAVA_TOOL_OPTIONS=-Dspring.context.exit=onRefresh "$@" app-dev1 \
+    > "$OUT/failfast.log" 2>&1 || code=$?
+  # (|| true: no matching line, e.g. because it started, must not stop the demo before the check is recorded)
+  { grep -E "Application run failed|Exception|Caused by|Status 403|permission denied" "$OUT/failfast.log" | grep -vE "^\s*(at |\* )" \
+    | sed -E 's/^.* (ERROR|WARN) .* -- //' | cut -c1-200 | head -8 || true; } | save_evidence "failfast-${name}.log"
   expect "$id" "" "$([[ $code -ne 0 ]] && echo "refused to start" || echo "started")" "" "failfast-${name}.log"
 }
 
